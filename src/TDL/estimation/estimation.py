@@ -7,7 +7,7 @@ from TDL.metrics.metrics import compute_accuracy
 
 
 def kernel_regression(K_train: torch.Tensor, K_test: torch.Tensor, 
-                     Y_train: torch.Tensor, reg: float = 1e-4) -> torch.Tensor:
+                    Y_train: torch.Tensor, reg: float = 1e-4) -> torch.Tensor:
     """
     Solve kernel regression: Y_pred = K_test @ (K_train + lambda*I)^{-1} @ Y_train
     

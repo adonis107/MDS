@@ -7,12 +7,8 @@ from typing import Tuple, Optional
 
 class CNTKVectorized:
     """
-    Memory-efficient CNTK implementation.
-    
-    Instead of storing full [N1, N2, P, P] tensors, this implementation
-    computes the kernel pairwise and aggregates directly.
+    CNTK implementation.
     """
-    
     def __init__(self, depth: int, use_gap: bool = True):
         self.depth = depth
         self.use_gap = use_gap
@@ -21,14 +17,18 @@ class CNTKVectorized:
 
     @staticmethod
     def _kappa0(rho: torch.Tensor) -> torch.Tensor:
-        """Derivative covariance for ReLU: E[sigma'(u) * sigma'(v)]."""
+        """
+        Derivative covariance for ReLU: E[sigma'(u) * sigma'(v)].
+        """
         rho = torch.clamp(rho, -1.0 + 1e-7, 1.0 - 1e-7)
         return (np.pi - torch.arccos(rho)) / (2 * np.pi)
     
 
     @staticmethod
     def _kappa1(rho: torch.Tensor) -> torch.Tensor:
-        """Activation covariance for ReLU (normalized): E[sigma(u) * sigma(v)]."""
+        """
+        Activation covariance for ReLU (normalized): E[sigma(u) * sigma(v)].
+        """
         rho = torch.clamp(rho, -1.0 + 1e-7, 1.0 - 1e-7)
         angle = torch.arccos(rho)
         return (rho * (np.pi - angle) + torch.sqrt(1 - rho**2)) / (2 * np.pi)
@@ -109,7 +109,7 @@ class CNTKVectorized:
                     dst_w_end = W + min(0, dj)
 
                     Sigma_next[dst_h_start:dst_h_end, dst_w_start:dst_w_end,
-                                 dst_h_start:dst_h_end, dst_w_start:dst_w_end] += \
+                                dst_h_start:dst_h_end, dst_w_start:dst_w_end] += \
                         Sigma_pointwise[src_h_start:src_h_end, src_w_start:src_w_end,
                                         src_h_start:src_h_end, src_w_start:src_w_end]
                     

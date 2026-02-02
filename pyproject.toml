@@ -1,5 +1,5 @@
 [project]
-name = "mva-dlp"
+name = "dlp"
 version = "0.1.0"
 description = "[MVA/CentraleSupélec] Deep Learning in Practice Labs."
 readme = "README.md"

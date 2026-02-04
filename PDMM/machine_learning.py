@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
+from PDMM.thresholds.dspot import DriftStreamingPeakOverThreshold as dspot
 
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, dropout=0.1, max_len=5000):
@@ -152,6 +153,37 @@ class ProbabilisticRobustAutoencoder(nn.Module):
         """
         with torch.no_grad():
             return self.mu.cpu().numpy()
+
+
+class PRAELoss(nn.Module):
+    def __init__(self, lambda_reg):
+        """
+        Args:
+            lambda_reg: Regularization parameter. 
+                        Controls the trade-off between reconstruction quality and 
+                        how many samples are treated as inliers.
+        """
+        super(PRAELoss, self).__init__()
+        self.lambda_reg = lambda_reg
+
+    def forward(self, x, x_hat, z):
+        """
+        Args:
+            x: Input data
+            x_hat: Reconstructed data
+            z: The stochastic gates returned by the model (batch_size,)
+        """
+        # Compute element-wise reconstruction loss
+        # Sum over all dimensions except batch (dim 0)
+        recon_error = torch.sum((x - x_hat) ** 2, dim=tuple(range(1, x.dim())))
+        
+        # Apply the gates
+        gated_error = torch.mean(z * recon_error)
+        
+        # Regularization term
+        reg_term = -self.lambda_reg * torch.mean(z)
+        
+        return gated_error + reg_term
 
 
 class ProbabilisticNN(nn.Module):
@@ -961,39 +993,47 @@ def analyze_subset(pipeline, loader, dataset_name, model_type, feature_names, de
             scores.extend(batch_scores)
             
     scores = np.array(scores)
-    
-    # Determine Threshold
+
     if use_pot:
         try:
-            threshold, init_thres = fit_pot_threshold(scores, risk_level=risk_level)
-            method_name = f"POT - risk={risk_level}"
+            print("Computing Drift Streaming POT threshold...")
+            threshold = dspot(
+                data=scores,
+                num_init=3000,
+                depth=200,
+                num_candidates=20,
+                risk=risk_level,
+                init_level=0.98,
+                epsilon=1e-8
+            )
+            method_name = f"Drift Streaming POT - risk={risk_level}"
         except Exception as e:
-            print(f"POT fitting failed: {e}. Using 99th percentile instead.")
+            print(f"Drift Streaming POT fitting failed: {e}. Using 99th percentile instead.")
             threshold = np.percentile(scores, 99)
             method_name = "99th Percentile"
-        
     else:
         threshold = np.percentile(scores, 99)
         method_name = "99th Percentile"
 
-    anomaly_indices = np.where(scores > threshold)[0]
+    anomaly_mask = scores > threshold
+    anomaly_indices = np.where(anomaly_mask)[0]
 
-    print(f"{method_name} Threshold: {threshold:.4f}\nDetected {len(anomaly_indices)} anomalies out of {len(scores)} samples ({len(anomaly_indices)/len(scores)*100:.2f}%).")
+    print(f"{method_name}\nDetected {len(anomaly_indices)} anomalies out of {len(scores)} samples ({len(anomaly_indices)/len(scores)*100:.2f}%).")
 
     # Visualize Distribution
     plt.figure(figsize=(12, 4))
     
     plt.subplot(1, 2, 1)
     plt.plot(scores, alpha=0.6, linewidth=0.8)
-    plt.axhline(threshold, color='r', linestyle='--', label=f'Threshold ({method_name})')
+    plt.plot(threshold, color='r', linestyle='--', label=f'Threshold ({method_name})')
     plt.title(f"{model_type.upper()} Scores - {dataset_name} (Timeline)")
     plt.xlabel("Sequence Index")
     plt.ylabel("Anomaly Score")
     
     plt.subplot(1, 2, 2)
     sns.histplot(scores, kde=True, bins=50)
-    plt.axvline(threshold, color='r', linestyle='--', label=f'Threshold ({method_name})')
-    plt.title(f"Score Distribution - {dataset_name} ({method_name})")
+    # plt.plot(threshold, color='r', linestyle='--', label=f'Threshold ({method_name})')
+    plt.title(f"Score Distribution - {dataset_name}")
     plt.xlabel("Anomaly Score")
     
     plt.tight_layout()
@@ -1070,3 +1110,6 @@ def fit_pot_threshold(scores, risk_level=1e-3, init_level=0.98):
     final_threshold = threshold_u + (sigma_hat / (gamma_hat + 1e-6)) * (((q * Nt) / (Nu + 1e-6))**(-gamma_hat) - 1)
     
     return final_threshold, threshold_u
+
+
+    

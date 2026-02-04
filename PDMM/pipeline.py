@@ -20,11 +20,14 @@ import PDMM.machine_learning as ml
 
 
 class LazySequenceDataset(Dataset):
-    def __init__(self, data_array, seq_length, targets=None, indices=None):
+    def __init__(self, data_array, seq_length, targets=None, indices=None, return_indices=False):
         self.data = torch.tensor(data_array, dtype=torch.float32)
         self.seq_length = seq_length
-        if indices is None: self.indices = np.arange(len(self.data) - self.seq_length)
-        else: self.indices = indices
+        self.return_indices = return_indices
+        if indices is None:
+            self.indices = np.arange(len(self.data) - self.seq_length)
+        else:
+            self.indices = indices
 
         self.targets = torch.tensor(targets, dtype=torch.float32) if targets is not None else None
         self._shape = (len(self.indices), self.seq_length, self.data.shape[1])
@@ -42,7 +45,10 @@ class LazySequenceDataset(Dataset):
         if self.targets is not None:
             # Target corresponds to the value at the end of the sequence
             y = self.targets[start_idx]
+            if self.return_indices: return x, y, idx
             return x, y
+        
+        if self.return_indices: return x, idx
         
         # Autoencoder: target is input
         return x, x
@@ -418,6 +424,7 @@ class AnomalyDetectionPipeline:
                 lambda_reg = mean_energy / (self.seq_length * num_feat) # normalized by input dim
                 print(f"Auto-tuned lambda (Mean Energy Heuristic): {lambda_reg:.6f}")
 
+            criterion = ml.PRAELoss(lambda_reg=lambda_reg)
             optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
             train_loader = self._get_dataloader(self.X_train, return_indices=True)
 
@@ -427,6 +434,7 @@ class AnomalyDetectionPipeline:
             for epoch in range(epochs):
                 self.model.train()
                 total_loss_epoch = 0
+                mean_gate_value = 0
 
                 for batch_x, batch_idx in train_loader:
                     batch_x = batch_x.to(self.device)
@@ -437,19 +445,16 @@ class AnomalyDetectionPipeline:
                     # Forward pass
                     reconstruced, z = self.model(batch_x, indices=batch_idx, training=True)
 
-                    # Per-sample reconstruction loss (MSE), shape: (batch_size,)
-                    error_per_sample = torch.mean((reconstruced - batch_x)**2, dim=[1, 2])
-
-                    # Loss
                     # Using mean instead of sum for stability
-                    loss_reconstruction = torch.mean(z * error_per_sample)
-                    loss_regularization = - lambda_reg * torch.mean(z)
-                    loss = loss_reconstruction + loss_regularization
+                    loss = criterion(batch_x, reconstruced, z)
 
                     loss.backward()
                     optimizer.step()
 
                     total_loss_epoch += loss.item()
+                    mean_gate_value += z.mean().item()
+
+                avg_gate = mean_gate_value / len(train_loader)
 
                 # Validation
                 self.model.eval()
@@ -462,7 +467,7 @@ class AnomalyDetectionPipeline:
                         val_rec_error += torch.mean(err).item()
                 
                 val_metric = val_rec_error / len(val_loader)
-                print(f"Epoch {epoch+1}/{epochs} - Train Loss: {total_loss_epoch/len(train_loader):.6f} | Val MSE: {val_metric:.6f}")
+                print(f"Epoch {epoch+1}/{epochs} - Train Loss: {total_loss_epoch/len(train_loader):.6f} | Val MSE: {val_metric:.6f} | Avg Gate (z): {avg_gate:.6f}")
                 
                 early_stopping(val_metric, self.model)
                 if early_stopping.early_stop:

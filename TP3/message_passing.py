@@ -25,16 +25,15 @@ def image_to_graph(
     # Assumptions (remove it for the bonus)
     assert image.dim() == 3, f"Expected 3D tensor, got {image.dim()}D tensor."
     if conv2d is not None:
-        assert conv2d.padding[0] == conv2d.padding[1] == 1, (
-            "Expected padding of 1 on both sides."
+        assert conv2d.padding[0] == conv2d.padding[1] == 2, (
+            "Expected padding of 2 on both sides."
         )
-        assert conv2d.kernel_size[0] == conv2d.kernel_size[1] == 3, (
-            "Expected kernel size of 3x3."
+        assert conv2d.kernel_size[0] == conv2d.kernel_size[1] == 5, (
+            "Expected kernel size of 5x5."
         )
         assert conv2d.stride[0] == conv2d.stride[1] == 1, "Expected stride of 1."
 
-    kernel_size = 3
-    padding = 1
+    kernel_size = conv2d.kernel_size[0] if conv2d is not None else 5
 
     C, H, W = image.shape
 
@@ -96,11 +95,11 @@ def graph_to_image(
     # Assumptions (remove it for the bonus)
     assert data.dim() == 2, f"Expected 2D tensor, got {data.dim()}D tensor."
     if conv2d is not None:
-        assert conv2d.padding[0] == conv2d.padding[1] == 1, (
-            "Expected padding of 1 on both sides."
+        assert conv2d.padding[0] == conv2d.padding[1] == 2, (
+            "Expected padding of 2 on both sides."
         )
-        assert conv2d.kernel_size[0] == conv2d.kernel_size[1] == 3, (
-            "Expected kernel size of 3x3."
+        assert conv2d.kernel_size[0] == conv2d.kernel_size[1] == 5, (
+            "Expected kernel size of 5x5."
         )
         assert conv2d.stride[0] == conv2d.stride[1] == 1, "Expected stride of 1."
 

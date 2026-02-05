@@ -1,7 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import torch_geometric.nn as graphnn
 from torch_geometric.datasets import PPI
 from torch_geometric.loader import DataLoader
 from sklearn.metrics import f1_score
@@ -9,12 +7,9 @@ import numpy as np
 from torch_geometric.nn import GATConv
 
 
-# Define model ( in your class_model_gnn.py) according to the architecture given in the paper
+# Define model (in your class_model_gnn.py) according to the architecture given in the paper
 class StudentModel(nn.Module):
     """
-    GAT model faithful to:
-    Velickovic et al., 'Graph Attention Networks', ICLR 2018 (PPI setup)
-
     This model implements a 3-layer Graph Attention Network (GAT) with a skip
     connection between the first and second hidden layers.
 
@@ -48,7 +43,6 @@ class StudentModel(nn.Module):
         self.elu = nn.ELU()
 
         # Layer 1
-        # K=4 heads, F'=256, concat=True
         self.conv1 = GATConv(
             input_size,
             hidden_size,
@@ -57,7 +51,6 @@ class StudentModel(nn.Module):
         )
 
         # Layer 2
-        # K=4 heads, F'=256, concat=True
         self.conv2 = GATConv(
             hidden_size * heads_1,
             hidden_size,
@@ -72,7 +65,6 @@ class StudentModel(nn.Module):
         )
 
         # Final layer (Classifier)
-        # K=6 heads, F'=121
         self.conv3 = GATConv(
             hidden_size * heads_2,
             output_size,
@@ -115,14 +107,13 @@ class StudentModel(nn.Module):
 
 
 # Evaluation function (from the notebook)
-def evaluate(model, loss_fcn, device, dataloader):
+def evaluate(model, device, dataloader):
     score_list_batch = []
 
     model.eval()
     for i, batch in enumerate(dataloader):
         batch = batch.to(device)
         output = model(batch.x, batch.edge_index)
-        loss_test = loss_fcn(output, batch.y)
         predict = np.where(output.detach().cpu().numpy() >= 0, 1, 0)
         score = f1_score(batch.y.cpu().numpy(), predict, average="micro")
         score_list_batch.append(score)
@@ -151,9 +142,8 @@ if __name__ == "__main__":
     print("Model loaded successfully")
 
     # Inference on validation and test datasets
-    loss_fcn = nn.BCEWithLogitsLoss()
-    val_scores = evaluate(model, loss_fcn, device, val_dataloader)
+    val_scores = evaluate(model, device, val_dataloader)
     print("Final GAT Model : F1-Score on the val set: {:.4f}".format(val_scores))
 
-    test_score = evaluate(model, loss_fcn, device, test_dataloader)
+    test_score = evaluate(model, device, test_dataloader)
     print("Final GAT Model : F1-Score on the test set: {:.4f}".format(test_score))

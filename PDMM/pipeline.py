@@ -411,8 +411,10 @@ class AnomalyDetectionPipeline:
             self.model = ml.ProbabilisticRobustAutoencoder(base_autoencoder=base_ae, num_train_samples=len(self.X_train)).to(self.device)
 
             # Regularization parameter: lambda
-            # Uses mean energy of samples
             if lambda_reg is None:
+                print("Starting Grid Search for optimal lambda...")
+
+                # Define Candidates
                 loader_sample = self._get_dataloader(self.X_train, shuffle=False)
                 sq_sum = 0
                 count = 0
@@ -420,9 +422,62 @@ class AnomalyDetectionPipeline:
                     if i > 50: break
                     sq_sum += torch.sum(bx**2).item()
                     count += bx.numel()
-                mean_energy = sq_sum / count * (num_feat * self.seq_length)
-                lambda_reg = mean_energy / (self.seq_length * num_feat) # normalized by input dim
-                print(f"Auto-tuned lambda (Mean Energy Heuristic): {lambda_reg:.6f}")
+                heuristic_lambda = sq_sum / count * (self.seq_length * num_feat)
+                
+                # Search around the heuristic
+                candidate_lambdas = [heuristic_lambda * f for f in [0.1, 0.5, 1.0, 2.0, 5.0, 10.0]]
+
+                best_lambda = heuristic_lambda
+                best_val_mse = float('inf')
+
+                # Validation Loader
+                val_loader = self._get_dataloader(self.X_val, shuffle=False)
+
+                for cand_lambda in candidate_lambdas:
+                    print(f"  Testing lambda = {cand_lambda:.6f}...")
+
+                    # Initialize temporary model
+                    temp_base_ae = ml.TransformerAutoencoder(num_features=num_feat, model_dim=64, num_heads=4, num_layers=2, representation_dim=128, sequence_length=self.seq_length)
+                    temp_model = ml.ProbabilisticRobustAutoencoder(base_autoencoder=temp_base_ae, num_train_samples=len(self.X_train)).to(self.device)
+
+                    temp_criterion = ml.PRAELoss(lambda_reg=cand_lambda)
+                    temp_optimizer = torch.optim.Adam(temp_model.parameters(), lr=lr)
+
+                    # Short training loop for selection
+                    train_loader = self._get_dataloader(self.X_train, return_indices=True)
+
+                    for _ in range(15): 
+                        temp_model.train()
+                        for batch_x, batch_idx in train_loader:
+                            batch_x = batch_x.to(self.device)
+                            batch_idx = batch_idx.to(self.device)
+                            temp_optimizer.zero_grad()
+                            reconstructed, z = temp_model(batch_x, indices=batch_idx, training=True)
+                            loss = temp_criterion(batch_x, reconstructed, z)
+                            loss.backward()
+                            temp_optimizer.step()
+
+                    # Evaluate on Validation Set
+                    temp_model.eval()
+                    total_sse = 0
+                    total_count = 0
+                    with torch.no_grad():
+                        for batch_x, _ in val_loader:
+                            batch_x = batch_x.to(self.device)
+                            reconstructed, _ = temp_model(batch_x, training=False)
+
+                            total_sse += torch.sum((reconstructed - batch_x)**2).item()
+                            total_count += batch_x.numel()
+
+                    avg_val_mse = total_sse / total_count
+                    print(f"  -> Val MSE: {avg_val_mse:.6f}")
+
+                    if avg_val_mse < best_val_mse:
+                        best_val_mse = avg_val_mse
+                        best_lambda = cand_lambda
+
+                print(f"Best lambda found: {best_lambda:.6f}")
+                lambda_reg = best_lambda
 
             criterion = ml.PRAELoss(lambda_reg=lambda_reg)
             optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
@@ -435,6 +490,8 @@ class AnomalyDetectionPipeline:
                 self.model.train()
                 total_loss_epoch = 0
                 mean_gate_value = 0
+                min_gate_value = float('inf')
+                max_gate_value = float('-inf')
 
                 for batch_x, batch_idx in train_loader:
                     batch_x = batch_x.to(self.device)
@@ -443,16 +500,19 @@ class AnomalyDetectionPipeline:
                     optimizer.zero_grad()
                     
                     # Forward pass
-                    reconstruced, z = self.model(batch_x, indices=batch_idx, training=True)
+                    reconstructed, z = self.model(batch_x, indices=batch_idx, training=True)
 
                     # Using mean instead of sum for stability
-                    loss = criterion(batch_x, reconstruced, z)
+                    loss = criterion(batch_x, reconstructed, z)
 
                     loss.backward()
                     optimizer.step()
 
                     total_loss_epoch += loss.item()
                     mean_gate_value += z.mean().item()
+                    min_gate_value = min(min_gate_value, z.min().item())
+                    max_gate_value = max(max_gate_value, z.max().item())
+
 
                 avg_gate = mean_gate_value / len(train_loader)
 
@@ -467,8 +527,8 @@ class AnomalyDetectionPipeline:
                         val_rec_error += torch.mean(err).item()
                 
                 val_metric = val_rec_error / len(val_loader)
-                print(f"Epoch {epoch+1}/{epochs} - Train Loss: {total_loss_epoch/len(train_loader):.6f} | Val MSE: {val_metric:.6f} | Avg Gate (z): {avg_gate:.6f}")
-                
+                print(f"Epoch {epoch+1}/{epochs} - Train Loss: {total_loss_epoch/len(train_loader):.6f} | Val MSE: {val_metric:.6f}")
+                print(f"    Avg Gate (z): {avg_gate:.6f} | Min Gate: {min_gate_value:.6f} | Max Gate: {max_gate_value:.6f}")
                 early_stopping(val_metric, self.model)
                 if early_stopping.early_stop:
                     print("Early stopping triggered.")

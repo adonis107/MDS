@@ -4,9 +4,11 @@ import math
 import re
 from matplotlib import pyplot as plt
 import seaborn as sns
+from scipy import stats
 from scipy.stats import skewnorm
 from scipy.special import erf
 from scipy.optimize import minimize
+from collections import deque
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
@@ -958,7 +960,8 @@ def analyze_root_cause_simple(model_pipeline, inputs, model_type='ae', SEQ_LENGT
     return df
 
 
-def analyze_subset(pipeline, loader, dataset_name, model_type, feature_names, device='cuda', SEQ_LENGTH=25, save_path=None, use_pot=True, risk_level=1e-3):
+def analyze_subset(pipeline, loader, dataset_name, model_type, feature_names, 
+                   device='cuda', SEQ_LENGTH=25, save_path=None, threshold_method='dspot', risk_level=1e-3):
     """
     Runs inference, plots scores, and finds root causes for a specific data subset.
     """
@@ -994,7 +997,7 @@ def analyze_subset(pipeline, loader, dataset_name, model_type, feature_names, de
             
     scores = np.array(scores)
 
-    if use_pot:
+    if threshold_method == 'dspot':
         try:
             print("Computing Drift Streaming POT threshold...")
             threshold = dspot(
@@ -1011,6 +1014,36 @@ def analyze_subset(pipeline, loader, dataset_name, model_type, feature_names, de
             print(f"Drift Streaming POT fitting failed: {e}. Using 99th percentile instead.")
             threshold = np.percentile(scores, 99)
             method_name = "99th Percentile"
+
+    elif threshold_method == 'fdr':
+        try:
+            print("Computing FDR threshold...")
+            threshold_val, _ = fdr_threshold(scores, alpha=risk_level, method='bh')
+            threshold = np.full(scores.shape, threshold_val)
+            method_name = f"FDR (Benjamini-Hochberg) - alpha={risk_level}"
+
+        except Exception as e:
+            print(f"FDR thresholding failed: {e}. Using 99th percentile instead.")
+            threshold = np.percentile(scores, 99)
+            method_name = "99th Percentile"
+
+    elif threshold_method == 'rolling_fdr':
+        try:
+            fdr = RollingFDR(window_size=500, alpha=risk_level)
+            dynamic_thresholds = []
+
+            for s in scores:
+                _, thresh = fdr.process_new_score(s)
+                dynamic_thresholds.append(thresh)
+
+            threshold = np.array(dynamic_thresholds)
+            method_name = f"Rolling FDR - Window Size=500 - alpha={risk_level}"
+        
+        except Exception as e:
+            print(f"Rolling FDR thresholding failed: {e}. Using 99th percentile instead.")
+            threshold = np.percentile(scores, 99)
+            method_name = "99th Percentile"
+            
     else:
         threshold = np.percentile(scores, 99)
         method_name = "99th Percentile"
@@ -1032,7 +1065,6 @@ def analyze_subset(pipeline, loader, dataset_name, model_type, feature_names, de
     
     plt.subplot(1, 2, 2)
     sns.histplot(scores, kde=True, bins=50)
-    # plt.plot(threshold, color='r', linestyle='--', label=f'Threshold ({method_name})')
     plt.title(f"Score Distribution - {dataset_name}")
     plt.xlabel("Anomaly Score")
     
@@ -1112,4 +1144,145 @@ def fit_pot_threshold(scores, risk_level=1e-3, init_level=0.98):
     return final_threshold, threshold_u
 
 
+def fdr_threshold(scores, alpha=0.05, n_components=3, method='bh', verbose=True):
+    """
+    FDR Thresholding with Log-Transformation for heavy-tailed data.
+    """
+    scores = np.array(scores).flatten()
+    n = len(scores)
+
+    # --- Step 1: Log-Transform ---
+    # Financial/Anomaly scores are often Log-Normal. 
+    # Log-transforming makes them closer to Gaussian for valid Z-scores.
     
+    # Handle negative/zero scores safely (e.g. from OCSVM or perfect reconstruction)
+    min_val = np.min(scores)
+    if min_val <= 0:
+        shift = np.abs(min_val) + 1e-6
+        scores_shifted = scores + shift
+    else:
+        scores_shifted = scores
+
+    # Apply Log
+    scores_log = np.log(scores_shifted)
+
+    X = scores_log.reshape(-1, 1)
+
+    # GMM
+    gmm = GaussianMixture(n_components=n_components, covariance_type='full', random_state=42)
+    gmm.fit(X)
+
+    if verbose:
+        print(f"GMM fit converged: {gmm.converged_}")
+        print(f"GMM weights: {gmm.weights_}")
+        print(f"GMM means: {gmm.means_.flatten()}")
+
+    p_values = np.zeros(n)
+
+    for i in range(n_components):
+        # Extract parameters for the k-th component
+        weight = gmm.weights_[i]
+        mu = gmm.means_[i, 0]
+        sigma = np.sqrt(gmm.covariances_[i, 0, 0])
+        
+        # Calculate Z-score for this specific component
+        z_k = (scores_log - mu) / sigma
+        
+        # Weighted contribution to the P-value
+        p_values += weight * stats.norm.sf(z_k)
+
+    # --- Step 3: Benjamini-Hochberg ---
+    sorted_indices = np.argsort(p_values)
+    sorted_p = p_values[sorted_indices]
+    ranks = np.arange(1, n + 1)
+    
+    if method == 'by':
+        c_n = np.sum(1.0 / ranks)
+        critical_values = (ranks / n) * (alpha / c_n)
+    else:
+        critical_values = (ranks / n) * alpha
+
+    below_threshold = sorted_p <= critical_values
+    
+    if np.any(below_threshold):
+        k_index = np.max(np.where(below_threshold))
+        threshold_idx = sorted_indices[k_index]
+        # Return the ORIGINAL raw score corresponding to this index
+        threshold = scores[threshold_idx]
+    else:
+        # Fallback if nothing is significant
+        threshold = np.max(scores) + 1e-6
+
+    num_anomalies = np.sum(scores >= threshold)
+
+    return threshold, num_anomalies
+
+
+class RollingFDR:
+    def __init__(self, window_size=500, alpha=0.05):
+        """
+        window_size: How many past scores to look at (the "memory").
+        alpha: The FDR significance level.
+        """
+        self.window_size = window_size
+        self.alpha = alpha
+        self.history = deque(maxlen=window_size)
+        
+    def process_new_score(self, new_score):
+        """
+        Add one new score, determine if it's an anomaly, and return the dynamic threshold used.
+        """
+        self.history.append(new_score)
+        
+        if len(self.history) < 20:
+            return False, 0.0
+            
+        scores = np.array(self.history)
+        
+        # Log Transform
+        min_val = np.min(scores)
+        if min_val <= 0:
+            shift = np.abs(min_val) + 1e-6
+            scores_shifted = scores + shift
+        else:
+            scores_shifted = scores
+            shift = 0
+
+        scores_log = np.log(scores_shifted)
+        
+        # Z-Score
+        median_val = np.median(scores_log)
+        diff = np.abs(scores_log - median_val)
+        mad = np.median(diff)
+        
+        if mad == 0:
+            mad = np.mean(diff) + 1e-10
+
+        robust_sigma = mad * 1.4826
+        z_scores = (scores_log - median_val) / robust_sigma
+        
+        # P-values
+        p_values = stats.norm.sf(z_scores)
+        
+        # Benjamini-Hochberg on the Window
+        n = len(scores)
+        sorted_indices = np.argsort(p_values)
+        sorted_p = p_values[sorted_indices]
+        ranks = np.arange(1, n + 1)
+        
+        critical_values = (ranks / n) * self.alpha
+        below_threshold = sorted_p <= critical_values
+        
+        if np.any(below_threshold):
+            # Largest p-value that is below the BH line
+            k_index = np.max(np.where(below_threshold))
+            threshold_idx = sorted_indices[k_index]
+            threshold_raw = scores[threshold_idx]
+        else:
+            threshold_raw = np.max(scores)
+
+        is_anomaly = new_score > threshold_raw
+        
+        return is_anomaly, threshold_raw
+    
+

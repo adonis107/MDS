@@ -1,0 +1,85 @@
+# =============================================================================
+# Anomaly Detection Pipeline - Default Configuration
+# =============================================================================
+
+data:
+  filepath: "data/TOTF.PA-book"
+  nrows: null              # null = read all rows
+  time_col: xltime         # Excel serial-date column
+  market_open_hour: 9.0    # Euronext Paris continuous session open (CET)
+  market_close_hour: 17.5  # Euronext Paris continuous session close (CET)
+
+features:
+  sets:
+    - base
+    - tao
+    - poutre
+    - hawkes
+    - ofi
+  window: 50
+  warmup_steps: 3000
+  clip_quantiles: [0.001, 0.999]
+  tao_configs:
+    - name: Weighted_Imbalance_decreasing
+      weights: [0.1, 0.1, 0.2, 0.2, 0.4]
+      levels: 5
+    - name: Weighted_Imbalance_increasing
+      weights: [0.4, 0.2, 0.2, 0.1, 0.1]
+      levels: 5
+    - name: Weighted_Imbalance_constant
+      weights: [0.2, 0.2, 0.2, 0.2, 0.2]
+      levels: 5
+
+preprocessing:
+  scaler: minmax        # minmax | standard | quantile
+  seq_length: 25
+  target_col: log_return
+  train_ratio: 0.70
+  val_ratio: 0.15
+
+model:
+  type: transformer_ocsvm  # transformer_ocsvm | pnn | prae
+
+  transformer:
+    model_dim: 64
+    num_heads: 4
+    num_layers: 2
+    representation_dim: 128
+
+  pnn:
+    hidden_dim: 64
+
+  prae:
+    lambda_reg: null    # null = auto (heuristic)
+    sigma: 0.5
+
+  ocsvm:
+    kernel: rbf
+    gamma: auto
+    nu: 0.01
+
+training:
+  epochs: 50
+  learning_rate: 0.001
+  batch_size: 64
+  patience: 5
+  device: auto          # auto | cpu | cuda
+
+threshold:
+  method: dspot         # pot | spot | dspot | rfdr
+  risk: 0.0001
+  init_level: 0.98
+  num_candidates: 10
+  # SPOT / DSPOT specific
+  num_init: null        # null = half of scores
+  depth: 50             # DSPOT drift depth
+  # RFDR specific
+  window_size: 500
+  alpha: 0.05
+
+evaluation:
+  beta: 4               # F-beta score parameter
+
+output:
+  results_dir: results
+  save_model: true

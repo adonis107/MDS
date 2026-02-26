@@ -1,0 +1,90 @@
+import numpy as np
+import torch
+import torch.nn as nn
+from detection.base import BaseDetector
+from detection.models.ocsvm import OCSVM
+from detection.models.transformer import BottleneckTransformer
+
+class TransformerOCSVM(BaseDetector):
+    def __init__(self, transformer_model, trainer, kernel='rbf', nu=0.01, gamma='auto',
+                 n_components=300, sgd_lr=0.01, sgd_epochs=50):
+        self.transformer = transformer_model
+        self.trainer = trainer
+        self.ocsvm = OCSVM(
+            kernel=kernel, nu=nu, gamma=gamma,
+            n_components=n_components, sgd_lr=sgd_lr, sgd_epochs=sgd_epochs,
+        )
+        self._latent_bank = []  # accumulated latent vectors across fit() calls
+
+    @property
+    def device(self):
+        return self.transformer.device
+
+    @staticmethod
+    def _median_heuristic_gamma(X: torch.Tensor, n_subsample: int = 2000) -> float:
+        """Compute RBF bandwidth via the median heuristic.
+
+        γ = 1 / median(‖xᵢ − xⱼ‖²) over a random subsample of pairs.
+        This is the standard bandwidth selection rule for kernel methods and
+        is robust across different latent-space dimensions / variances.
+        """
+        n = X.shape[0]
+        idx = torch.randperm(n, device=X.device)[:min(n_subsample, n)]
+        Z = X[idx]
+        # Pairwise squared distances
+        dists_sq = torch.cdist(Z, Z, p=2).pow(2)
+        # Upper triangle only (exclude diagonal zeros)
+        mask = torch.triu(torch.ones(len(Z), len(Z), device=X.device, dtype=torch.bool), diagonal=1)
+        med = dists_sq[mask].median().item()
+        med = max(med, 1e-8)
+        return 1.0 / med
+
+    def fit(self, train_loader, val_loader=None):
+        # Train Autoencoder
+        print("Training Transformer Autoencoder")
+        self.trainer.fit(self.transformer, train_loader, val_loader)
+
+        # Extract latent representations (kept on GPU)
+        print("Training OC-SVM (Nyström)")
+        self.transformer.eval()
+        device = self.device
+        self.transformer.to(device)
+        latent_vectors = []
+
+        with torch.no_grad():
+            for batch in train_loader:
+                batch = batch[0].to(device) if isinstance(batch, (list, tuple)) else batch.to(device)
+                latent = self.transformer.get_representation(batch)
+                latent_vectors.append(latent)
+
+        new_latent = torch.cat(latent_vectors, dim=0)
+
+        # Keep a bank of recent latent representations so the OC-SVM
+        # sees a broader view of normal behaviour across training days.
+        self._latent_bank.append(new_latent)
+        X_train_latent = torch.cat(self._latent_bank, dim=0)
+
+        # Set gamma via the median heuristic: γ = 1 / median(‖zᵢ − zⱼ‖²)
+        gamma = self._median_heuristic_gamma(X_train_latent)
+        self.ocsvm.set_gamma(gamma)
+
+        # Fit OCSVM on CUDA tensors directly
+        self.ocsvm.fit(X_train_latent)
+
+    def predict(self, dataloader):
+        self.transformer.eval()
+        device = self.device
+        self.transformer.to(device)
+        latent_vectors = []
+
+        with torch.no_grad():
+            for batch in dataloader:
+                batch = batch[0].to(device) if isinstance(batch, (list, tuple)) else batch.to(device)
+                latent = self.transformer.get_representation(batch)
+                latent_vectors.append(latent)
+
+        X_test_latent = torch.cat(latent_vectors, dim=0)
+
+        # decision_function returns numpy; negate so higher = more anomalous
+        return -self.ocsvm.decision_function(X_test_latent)
+    

@@ -5,8 +5,10 @@ torchaudio
 
 numpy
 pandas
-polars
 matplotlib
+seaborn
 scikit-learn
 scipy
-seaborn
+joblib
+pyyaml
+ipykernel

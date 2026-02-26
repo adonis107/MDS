@@ -6,11 +6,21 @@
 # Data
 *.csv.gz
 
+# Model Results
+*.pkl
+*.pth
+*.txt
+
 # Folders
 data/
-project_files/
+files/
+results/
 archive/
 __pycache__/
+.venv/
+
+# Notes
+*.md
 
 # Latex files
 *.aux
@@ -27,4 +37,3 @@ __pycache__/
 *.fdb_latexmk
 *.run.xml
 */output/
-

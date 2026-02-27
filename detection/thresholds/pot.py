@@ -35,6 +35,10 @@ def PeakOverThreshold(
     # Find Peaks
     y = data[data > t] - t
 
+    # If no peaks found, fall back to the initial threshold
+    if y.size == 0:
+        return t, t
+
     # Grimshaw
     gamma, sigma = Grimshaw(
         peaks=y, 

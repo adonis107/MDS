@@ -1,7 +1,7 @@
 """
 One-Class SVM with Nyström RBF kernel approximation - pure PyTorch / CUDA.
 
-Replaces the sklearn / cuml ``OneClassSVM`` with a GPU-native pipeline:
+Replaces the sklearn ``OneClassSVM`` with a GPU-native pipeline:
 
 1. Nyström approximation - sample m landmark points to build a
     low-rank approximation of the RBF kernel feature map $\phi(x) \in \mathbb{R}^m$.
@@ -43,7 +43,7 @@ class OCSVM(nn.Module, BaseDetector):
         nu: float = 0.01,
         gamma="auto",
         n_components: int = 300,
-        kernel: str = "rbf",   # kept for backward compat, always RBF
+        kernel: str = "rbf",
         sgd_lr: float = 0.01,
         sgd_epochs: int = 50,
         batch_size: int = 256,

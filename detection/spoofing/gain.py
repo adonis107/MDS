@@ -123,15 +123,13 @@ def calculate_expected_cost(mu, sigma, alpha, spread, delta_a, delta_b, Q, q,
     return cost_1 + cost_2 + cost_3 + cost_4
 
 
-# ── Batch API (preferred for large-scale evaluation) ─────────────────────
-
 def compute_spoofing_gains_batch(mu_arr, sigma_arr, alpha_arr, spread_arr,
                                   delta_a, delta_b, Q, q, fees, side='ask'):
     """
     Vectorised spoofing-gain computation over *all* samples at once.
 
     Equivalent to looping ``calculate_expected_cost`` twice per sample,
-    but ~50-200× faster because every CDF / conditional-expectation call
+    but ~50-200x faster because every CDF / conditional-expectation call
     processes the full array in one shot.
 
     Args:

@@ -95,7 +95,14 @@ def calculate_heuristic_lambda(train_loader, seq_len, num_features, num_batches=
 
 
 def grid_search_lambda(train_loader, val_loader, heuristic_lambda, num_train_samples, 
-                            num_features, seq_len, device='cuda', epochs=15, learning_rate=1e-3):
+                            num_features, seq_len, device='cuda', epochs=15, learning_rate=1e-3,
+                            model_dim=64, num_heads=4, num_layers=2, representation_dim=128):
+    """Select lambda_reg by minimising validation reconstruction loss (paper Section 4.2).
+
+    Trains a fresh PRAE for each candidate lambda (multiples of the heuristic)
+    and returns the value that yields the lowest reconstruction error on unseen
+    validation samples - the tuning scheme proposed in the PRAE literature.
+    """
     factors = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0]
     candidates = [heuristic_lambda * f for f in factors]
 
@@ -103,22 +110,25 @@ def grid_search_lambda(train_loader, val_loader, heuristic_lambda, num_train_sam
     best_score = float('inf')
 
     for candidate in candidates:
-        base_ae = BottleneckTransformer(input_dim=num_features, seq_len=seq_len, model_dim=64, num_heads=4, num_layers=2, representation_dim=128)
-        model = PRAE(backbone_model=base_ae, num_train_samples=num_train_samples, lambda_reg=candidate).to(device)
+        base_ae = BottleneckTransformer(
+            num_features=num_features, sequence_length=seq_len,
+            model_dim=model_dim, num_heads=num_heads,
+            num_layers=num_layers, representation_dim=representation_dim)
+        model = PRAE(backbone_model=base_ae, num_train_samples=num_train_samples,
+                     lambda_reg=candidate).to(device)
         
         # Train
         trainer = Trainer(epochs=epochs, device=device, learning_rate=learning_rate)
         trainer.fit(model, train_loader, val_loader)
 
-        # Evaluate
+        # Evaluate reconstruction error on validation set
         model.eval()
-        model.to(device)
         total_mse = 0
 
         with torch.no_grad():
             for batch in val_loader:
                 x = batch[0].to(device) if isinstance(batch, (list, tuple)) else batch.to(device)
-                reconstructed, _ = model.backbone(x)
+                reconstructed = model.backbone(x)
                 total_mse += torch.mean((x - reconstructed) ** 2).item()
         
         val_mse = total_mse / len(val_loader)

@@ -1,12 +1,12 @@
 """
-One-Class SVM with Nyström RBF kernel approximation – pure PyTorch / CUDA.
+One-Class SVM with Nyström RBF kernel approximation - pure PyTorch / CUDA.
 
 Replaces the sklearn / cuml ``OneClassSVM`` with a GPU-native pipeline:
 
-1. **Nyström approximation** – sample *m* landmark points to build a
-   low-rank approximation of the RBF kernel feature map φ(x) ∈ ℝᵐ.
-2. **Linear OC-SVM via SGD** – a linear separator (w, ρ) is trained in
-   the approximate feature space on CUDA tensors.
+1. Nyström approximation - sample m landmark points to build a
+    low-rank approximation of the RBF kernel feature map $\phi(x) \in \mathbb{R}^m$.
+2. Linear OC-SVM via SGD - a linear separator (w, rho) is trained in
+    the approximate feature space on CUDA tensors.
 """
 
 import numpy as np
@@ -18,14 +18,14 @@ from detection.base import BaseDetector
 
 
 class OCSVM(nn.Module, BaseDetector):
-    """Nyström-approximated One-Class SVM (PyTorch).
+    """Nyström-approximated One-Class SVM.
 
     Parameters
     ----------
     nu : float
         Upper bound on the fraction of outliers, in (0, 1].
     gamma : float or ``'auto'``
-        RBF bandwidth.  ``'auto'`` → ``1 / n_features``.
+        RBF bandwidth.  ``'auto'`` -> ``1 / n_features``.
     n_components : int
         Number of Nyström landmarks (approximation rank).
     kernel : str
@@ -63,10 +63,6 @@ class OCSVM(nn.Module, BaseDetector):
         self.register_buffer("_w", None)
         self.register_buffer("_rho", None)
 
-    # ------------------------------------------------------------------
-    # Public helpers
-    # ------------------------------------------------------------------
-
     @property
     def gamma(self):
         return self._gamma
@@ -76,7 +72,7 @@ class OCSVM(nn.Module, BaseDetector):
         self._gamma = gamma
 
     def set_params(self, **params):
-        """sklearn-style parameter setter (backward compat)."""
+        """sklearn-style parameter setter."""
         for k, v in params.items():
             if k == "gamma":
                 self.set_gamma(v)
@@ -84,25 +80,17 @@ class OCSVM(nn.Module, BaseDetector):
                 setattr(self, k, v)
         return self
 
-    # ------------------------------------------------------------------
-    # Kernel helpers
-    # ------------------------------------------------------------------
-
     def _rbf_kernel(self, X: torch.Tensor, Y: torch.Tensor) -> torch.Tensor:
-        """K(X,Y) = exp(−γ‖x−y‖²),  (n,d)×(m,d) → (n,m)."""
+        """K(X,Y) = exp(-gamma ||x - y||^2),  (n, d) x (m,d) -> (n,m)."""
         X_sq = (X ** 2).sum(dim=1, keepdim=True)
         Y_sq = (Y ** 2).sum(dim=1, keepdim=True)
         dist_sq = X_sq + Y_sq.T - 2.0 * X @ Y.T
         return torch.exp(-self._gamma * dist_sq.clamp(min=0.0))
 
     def _nystroem_features(self, X: torch.Tensor) -> torch.Tensor:
-        """φ(X) via Nyström: K(X, landmarks) @ normalization."""
+        """phi(X) via Nyström: K(X, landmarks) @ normalization."""
         K = self._rbf_kernel(X, self._landmarks)
         return K @ self._normalization
-
-    # ------------------------------------------------------------------
-    # Fit / predict
-    # ------------------------------------------------------------------
 
     def fit(self, X):
         """Fit the Nyström OC-SVM.
@@ -125,12 +113,12 @@ class OCSVM(nn.Module, BaseDetector):
         if self._gamma == "auto":
             self._gamma = 1.0 / d
 
-        # 1. landmarks ----------------------------------------------------
+        # landmarks
         m = min(self.n_components, n)
         idx = torch.randperm(n, device=device)[:m]
         landmarks = X[idx].clone()
 
-        # 2. normalization: K_zz = U S Uᵀ  →  norm = U S^{-½} ------------
+        # normalization: K_zz = U S U^T ->  norm = U S^{-1/2}
         K_zz = self._rbf_kernel(landmarks, landmarks)
         K_zz += 1e-6 * torch.eye(m, device=device)
         S, U = torch.linalg.eigh(K_zz)
@@ -141,13 +129,13 @@ class OCSVM(nn.Module, BaseDetector):
         self._normalization = normalization
         self.to(device)
 
-        # 3. transform training data (batched) ----------------------------
+        # transform training data (batched)
         parts = []
         for i in range(0, n, self.batch_size):
             parts.append(self._nystroem_features(X[i : i + self.batch_size]))
         phi = torch.cat(parts, dim=0)
 
-        # 4. linear OC-SVM via SGD ----------------------------------------
+        # linear OC-SVM via SGD
         w = torch.randn(m, device=device) * 0.01
         rho = torch.zeros(1, device=device)
         w.requires_grad_(True)
@@ -168,9 +156,8 @@ class OCSVM(nn.Module, BaseDetector):
 
         self._w = w.detach()
 
-        # Override ρ analytically: set as the ν-quantile of training
-        # projections w·φ(x).  This satisfies the KKT condition that
-        # exactly ν fraction of training points lie outside the boundary
+        # set rho as the nu-quantile of training projections omega x phi(x).
+        # KKT condition: exactly nu fraction of training points lie outside the boundary
         # (decision_function < 0), regardless of SGD convergence quality.
         with torch.no_grad():
             proj_parts = []
@@ -184,7 +171,7 @@ class OCSVM(nn.Module, BaseDetector):
     def decision_function(self, X):
         """Signed distance to the separating hyper-plane.
 
-        **Positive → inlier, negative → outlier** (sklearn convention).
+        Positive → inlier, negative → outlier (sklearn convention).
 
         Parameters
         ----------

@@ -83,8 +83,8 @@ def filter_market_hours(
 def clean_lob(df: pd.DataFrame) -> pd.DataFrame:
     """Apply basic sanity cleaning to a raw LOB DataFrame.
 
-    * Drops fully-NaN artifact columns (e.g. ``Unnamed: 1``).
-    * Sorts by the time column if present.
+    - Drops fully-NaN artifact columns (e.g. ``Unnamed: 1``).
+    - Sorts by the time column if present.
 
     Parameters
     ----------
@@ -96,7 +96,6 @@ def clean_lob(df: pd.DataFrame) -> pd.DataFrame:
     DataFrame
         Cleaned copy.
     """
-    # Drop columns whose name starts with "Unnamed" (CSV artifacts)
     unnamed_cols = [c for c in df.columns if c.startswith("Unnamed")]
     if unnamed_cols:
         df = df.drop(columns=unnamed_cols)

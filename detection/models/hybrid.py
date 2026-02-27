@@ -24,7 +24,7 @@ class TransformerOCSVM(BaseDetector):
     def _median_heuristic_gamma(X: torch.Tensor, n_subsample: int = 2000) -> float:
         """Compute RBF bandwidth via the median heuristic.
 
-        γ = 1 / median(‖xᵢ − xⱼ‖²) over a random subsample of pairs.
+        gamma = 1 / median(‖x_i - x_j‖^2) over a random subsample of pairs.
         This is the standard bandwidth selection rule for kernel methods and
         is robust across different latent-space dimensions / variances.
         """
@@ -59,16 +59,14 @@ class TransformerOCSVM(BaseDetector):
 
         new_latent = torch.cat(latent_vectors, dim=0)
 
-        # Keep a bank of recent latent representations so the OC-SVM
-        # sees a broader view of normal behaviour across training days.
         self._latent_bank.append(new_latent)
         X_train_latent = torch.cat(self._latent_bank, dim=0)
 
-        # Set gamma via the median heuristic: γ = 1 / median(‖zᵢ − zⱼ‖²)
+        # Set gamma via the median heuristic
         gamma = self._median_heuristic_gamma(X_train_latent)
         self.ocsvm.set_gamma(gamma)
 
-        # Fit OCSVM on CUDA tensors directly
+        # Fit OCSVM
         self.ocsvm.fit(X_train_latent)
 
     def predict(self, dataloader):
@@ -85,6 +83,6 @@ class TransformerOCSVM(BaseDetector):
 
         X_test_latent = torch.cat(latent_vectors, dim=0)
 
-        # decision_function returns numpy; negate so higher = more anomalous
+        # negate so higher = more anomalous
         return -self.ocsvm.decision_function(X_test_latent)
     

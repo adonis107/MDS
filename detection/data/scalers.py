@@ -1,15 +1,13 @@
 import numpy as np
-from sklearn.preprocessing import PowerTransformer, StandardScaler, QuantileTransformer
+from sklearn.preprocessing import StandardScaler, QuantileTransformer
 
 class scaler():
     """
     Box-Cox transformation + z-score normalization
     """
     def __init__(self):
-        # self.boxcox_transformer = PowerTransformer(method='box-cox', standardize=False)
         self.boxcox_transformer = QuantileTransformer(output_distribution='normal', random_state=0)
         self.scaler = StandardScaler()
-        # self.lambdas = None
         self.min_values = None
 
     def fit(self, X):
@@ -27,8 +25,6 @@ class scaler():
         X_boxcox = self.boxcox_transformer.transform(X_positive)
 
         self.scaler.fit(X_boxcox)
-        # self.lambdas = self.boxcox_transformer.lambdas_
-
         return self
     
     def transform(self, X):
@@ -41,8 +37,7 @@ class scaler():
         if self.min_values is None:
             raise ValueError("The preprocessor has not been fitted yet. Call 'fit' with training data first.")
         
-        X_positive = X - self.min_values + 1e-6  # Shift to positive
-
+        X_positive = X - self.min_values + 1e-6
         X_boxcox = self.boxcox_transformer.transform(X_positive)
         X_scaled = self.scaler.transform(X_boxcox)
 

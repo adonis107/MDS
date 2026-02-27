@@ -22,14 +22,12 @@ def create_sequences(data, seq_length):
         return np.empty((0, seq_length, data.shape[1]), dtype=data.dtype)
 
     # sliding_window_view gives shape (n_samples+1, Features, seq_length)
-    # so we window along axis=0 and then transpose the last two axes.
     view = sliding_window_view(data, window_shape=seq_length, axis=0)  # (N, F, S)
     view = view[:n_samples].transpose(0, 2, 1)  # (N, S, F)
 
-    # For small arrays return a contiguous copy (needed by some downstream ops);
-    # for large arrays keep the memory-efficient view.
+    # For small arrays return a contiguous copy, for large arrays keep the memory-efficient view.
     nbytes = n_samples * seq_length * data.shape[1] * data.dtype.itemsize
-    if nbytes < 2 * (1024 ** 3):  # < 2 GiB → copy is fine
+    if nbytes < 2 * (1024 ** 3):  # < 2 GiB -> copy is fine
         return np.ascontiguousarray(view)
     return view
 

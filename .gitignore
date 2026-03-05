@@ -20,6 +20,7 @@ __pycache__/
 
 # Notes
 *.md
+!README.md
 
 # Latex files
 *.aux

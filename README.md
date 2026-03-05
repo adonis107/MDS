@@ -1,0 +1,1 @@
+This repository contains the code related to the project "Learning the Spoofability of Limit Order Books With Interpretable Probabilistic Neural Networks" by Adonis Jamal and Jean-Vincent Martini for the "Mathematics and Data Science" major at CentraleSupélec.

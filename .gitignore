@@ -5,6 +5,7 @@
 
 # Data
 *.csv.gz
+*.parquet
 
 # Model Results
 *.pkl

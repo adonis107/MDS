@@ -12,3 +12,6 @@ scipy
 joblib
 pyyaml
 ipykernel
+pyarrow
+fastparquet
+hdbscan

@@ -20,7 +20,7 @@
 #SBATCH --cpus-per-task=8        # data-loader workers + overhead
 #SBATCH --gres=gpu:1             # one GPU is enough (single-node)
 #SBATCH --mem=40G                # matches ~1× A100 node RAM budget
-#SBATCH --time=12:00:00          # 12 h should be plenty; raise if needed
+#SBATCH --time=24:00:00          # max walltime on gpua100/gpu partitions
 # ─────────────────────────────────────────────────────────────
 
 # -- do NOT inherit the submission environment --
@@ -52,6 +52,8 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 # == 6. Run training ==========================================
 # training.py uses relative paths from the project root
 # (data/processed/... and results/)
+# It now checkpoints progress per day into results/resume_state,
+# so rerunning this same script continues automatically after timeout.
 cd "$PROJECT_ROOT"
 
 python training.py

@@ -17,6 +17,7 @@
 import os
 import sys
 import glob
+import json
 import logging
 
 import numpy as np
@@ -53,7 +54,9 @@ logger.info("Device: %s", DEVICE)
 # Paths
 DATA_DIR = os.path.join("data", "processed", "TOTF.PA-book")
 RESULTS_DIR = os.path.join("results")
+RESUME_DIR = os.path.join(RESULTS_DIR, "resume_state")
 os.makedirs(RESULTS_DIR, exist_ok=True)
+os.makedirs(RESUME_DIR, exist_ok=True)
 
 # Data parameters
 TIME_COL = "xltime"
@@ -252,6 +255,90 @@ def train_one_block(model, detector, train_loader, val_loader, model_type):
                       callbacks=[early_stop], device=str(DEVICE))
     trainer.fit(model, train_loader, val_loader)
 
+
+def final_artifacts_exist(model_type):
+    """Return True if final artifacts for a model are already present."""
+    required = [
+        os.path.join(RESULTS_DIR, f"{model_type}_weights.pth"),
+        os.path.join(RESULTS_DIR, f"{model_type}_scaler.pkl"),
+        os.path.join(RESULTS_DIR, f"{model_type}_features.txt"),
+    ]
+    if model_type == "transformer_ocsvm":
+        required.append(os.path.join(RESULTS_DIR, f"{model_type}_detector.pth"))
+    return all(os.path.exists(path) for path in required)
+
+
+def get_resume_paths(model_type):
+    """Paths used to save and load per-model resume checkpoints."""
+    return {
+        "meta": os.path.join(RESUME_DIR, f"{model_type}_meta.json"),
+        "weights": os.path.join(RESUME_DIR, f"{model_type}_weights.pth"),
+        "scaler": os.path.join(RESUME_DIR, f"{model_type}_scaler.pkl"),
+    }
+
+
+def save_resume_state(model_type, model, scaler, feature_names, next_day, prae_lambda=None):
+    """Persist enough state to resume after a walltime timeout."""
+    paths = get_resume_paths(model_type)
+
+    model_state = model.state_dict()
+    if model_type == "prae" and "mu" in model_state:
+        # `mu` depends on current block size and is recreated each day.
+        model_state = {k: v for k, v in model_state.items() if k != "mu"}
+
+    torch.save(model_state, paths["weights"])
+    joblib.dump(scaler, paths["scaler"])
+
+    payload = {
+        "next_day": int(next_day),
+        "feature_names": feature_names,
+        "prae_lambda": None if prae_lambda is None else float(prae_lambda),
+    }
+    with open(paths["meta"], "w") as f:
+        json.dump(payload, f)
+
+
+def load_resume_state(model_type):
+    """Load saved state for a model. Returns None if unavailable/incomplete."""
+    paths = get_resume_paths(model_type)
+    if not all(os.path.exists(paths[k]) for k in ["meta", "weights", "scaler"]):
+        return None
+
+    with open(paths["meta"], "r") as f:
+        meta = json.load(f)
+
+    feature_names = meta.get("feature_names")
+    next_day = int(meta.get("next_day", 0))
+    if not feature_names or next_day <= 0:
+        return None
+
+    model, detector = build_fresh_model(model_type, len(feature_names))
+    state_dict = torch.load(paths["weights"], map_location=DEVICE)
+    if model_type == "prae":
+        model.load_state_dict(state_dict, strict=False)
+        if meta.get("prae_lambda") is not None:
+            model.lambda_reg = float(meta["prae_lambda"])
+    else:
+        model.load_state_dict(state_dict)
+
+    scaler = joblib.load(paths["scaler"])
+    return {
+        "model": model,
+        "detector": detector,
+        "scaler": scaler,
+        "feature_names": feature_names,
+        "start_day": next_day,
+        "prae_lambda": meta.get("prae_lambda"),
+    }
+
+
+def clear_resume_state(model_type):
+    """Remove stale resume files once a model is fully completed."""
+    paths = get_resume_paths(model_type)
+    for path in paths.values():
+        if os.path.exists(path):
+            os.remove(path)
+
 # %% [markdown]
 # ## Sequential Training Loop
 # 
@@ -273,6 +360,10 @@ feature_name_map = {} # model_type -> list of feature names
 training_log = []     # list of dicts for summary
 
 for model_type in MODEL_TYPES:
+    if final_artifacts_exist(model_type):
+        logger.info("Skipping %s: final artifacts already exist.", model_type)
+        continue
+
     logger.info("=" * 80)
     logger.info("MODEL: %s", model_type.upper())
     logger.info("=" * 80)
@@ -282,8 +373,25 @@ for model_type in MODEL_TYPES:
     feature_names = None
     scaler_fitted = False
     prae_lambda = None  # will be set via grid search on first usable day
+    start_day = 0
 
-    for day_idx in range(NUM_TRAIN_DAYS):
+    resume_state = load_resume_state(model_type)
+    if resume_state is not None:
+        model = resume_state["model"]
+        detector = resume_state["detector"]
+        scaler = resume_state["scaler"]
+        feature_names = resume_state["feature_names"]
+        scaler_fitted = True
+        start_day = resume_state["start_day"]
+        prae_lambda = resume_state["prae_lambda"]
+        logger.info(
+            "Resuming %s from day %d/%d.",
+            model_type,
+            start_day + 1,
+            NUM_TRAIN_DAYS,
+        )
+
+    for day_idx in range(start_day, NUM_TRAIN_DAYS):
         filepath = FILES[day_idx]
         day_name = os.path.basename(filepath)
         logger.info("Day %d/%d: %s", day_idx + 1, NUM_TRAIN_DAYS, day_name)
@@ -355,6 +463,15 @@ for model_type in MODEL_TYPES:
             "val_samples": len(val_loader.dataset),
         })
 
+        save_resume_state(
+            model_type=model_type,
+            model=model,
+            scaler=scaler,
+            feature_names=feature_names,
+            next_day=day_idx + 1,
+            prae_lambda=prae_lambda,
+        )
+
     # ----------------------------------------------------------------
     # Fit Nyström OC-SVM once after all days, using the final frozen
     # encoder to re-encode every training day's first-hour data.
@@ -425,6 +542,8 @@ for model_type in MODEL_TYPES:
     feat_path = os.path.join(RESULTS_DIR, f"{model_type}_features.txt")
     with open(feat_path, "w") as f:
         f.write("\n".join(feature_names))
+
+    clear_resume_state(model_type)
 
 logger.info("All models trained.")
 

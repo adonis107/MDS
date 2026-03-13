@@ -6,6 +6,7 @@
 # Data
 *.csv.gz
 *.parquet
+*.zip
 
 # Folders
 files/

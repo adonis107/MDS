@@ -113,6 +113,7 @@ Interactive notebooks provide step-by-step analysis and visualization:
 | 3 | Testing | Evaluation on held-out data with anomaly classification |
 | 4 | Sensitivity Analysis | Feature attribution via Integrated Gradients and Grouped Occlusion |
 | 5 | Threshold Analysis | Comparison of POT, DSPOT, RFDR and percentile-based methods |
+| 6 | Anomaly Clustering | Clustering of detected anomalies to identify patterns and potential spoofing events |
 
 ## Models at a Glance
 
@@ -122,7 +123,7 @@ Interactive notebooks provide step-by-step analysis and visualization:
 | **PNN** | Single hidden layer → skewed Gaussian parameters (μ, σ, α) | Negative log-likelihood |
 | **PRAE** | Transformer AE with learnable stochastic gates per training sample | Reconstruction error |
 
-## Maintainers
+## Authors
 
 - **Adonis Jamal** — CentraleSupélec
 - **Jean-Vincent Martini** — CentraleSupélec

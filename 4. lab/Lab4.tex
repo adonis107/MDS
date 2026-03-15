@@ -33,7 +33,7 @@
     \end{subfigure}
 \end{figure}
 
-These graphs show the optimal policy and state-value function learned by MC Control. The policy displays two distinct strategies: with a usable ace, the agent aggressively hits below 18 due to the safety buffer a usable ace provides. Without a usable ace, the strategy becomes dealer-dependent hitting when the dealer shows strong cards (7+), but sticking at 13+ against weak dealer cards (2-6), recognizing the dealer's bust probability. 
+These graphs show the optimal policy and state-value function learned by MC Control. The policy displays two distinct strategies: with a usable ace, the agent aggressively hits below 17 due to the safety buffer a usable ace provides. Without a usable ace, the strategy becomes dealer-dependent hitting when the dealer shows strong cards (7+), but sticking at 12+ against weak dealer cards (2-6), recognizing the dealer's bust probability. 
 
 The 3D value function surface shows that states with a usable ace are inherently more valuable, with peaks at player sums of 19-21. Without a usable ace, state values depend critically on both the player's hand strength and the dealer's exposed card. Both policies align with basic Blackjack strategy, demonstrating that the agent discovered optimal decision factors: player hand strength, dealer visibility, and ace flexibility. Some noise appears due to insufficient visitation of certain state-action pairs despite 500,000 episodes.
 

@@ -80,6 +80,45 @@ def filter_market_hours(
     return df_filtered
 
 
+def split_first_hour_blocks(
+    xltime_vals, features,
+    market_open_hour, first_hour_minutes,
+    train_block_minutes, val_block_minutes,
+):
+    time_factor = 1.0 / (24.0 * 60.0)
+    base_date = np.floor(xltime_vals[0])
+    start_time = base_date + market_open_hour / 24.0
+
+    train_mask = np.zeros(len(features), dtype=bool)
+    val_mask = np.zeros(len(features), dtype=bool)
+    block_duration = (train_block_minutes + val_block_minutes) * time_factor
+    num_blocks = int(first_hour_minutes / (train_block_minutes + val_block_minutes))
+
+    for b in range(num_blocks):
+        block_start = start_time + b * block_duration
+        train_end = block_start + train_block_minutes * time_factor
+        val_end = train_end + val_block_minutes * time_factor
+        train_mask |= (xltime_vals >= block_start) & (xltime_vals < train_end)
+        val_mask |= (xltime_vals >= train_end) & (xltime_vals < val_end)
+
+    train_features = features.loc[train_mask].reset_index(drop=True)
+    val_features = features.loc[val_mask].reset_index(drop=True)
+    return train_features, val_features
+
+
+def get_time_frac(df, time_col="xltime"):
+    base_date = np.floor(df[time_col].values)
+    return df[time_col].values - base_date
+
+
+def assign_period(time_frac_arr, periods):
+    labels = np.full(len(time_frac_arr), "unknown", dtype=object)
+    for name, (open_h, close_h) in periods.items():
+        mask = (time_frac_arr >= open_h / 24.0) & (time_frac_arr < close_h / 24.0)
+        labels[mask] = name
+    return labels
+
+
 def clean_lob(df: pd.DataFrame) -> pd.DataFrame:
     """Apply basic sanity cleaning to a raw LOB DataFrame.
 

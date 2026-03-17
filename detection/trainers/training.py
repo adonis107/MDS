@@ -53,3 +53,18 @@ class Trainer:
             if stop:
                 break
                         
+
+def train_one_block(model, detector, train_loader, val_loader, model_type,
+                    patience, epochs, lr, device):
+    if model_type == "transformer_ocsvm":
+        for cb in detector.trainer.callbacks:
+            if isinstance(cb, EarlyStopping):
+                cb.reset()
+        detector.trainer.fit(detector.transformer, train_loader, val_loader)
+        return
+
+    early_stop = EarlyStopping(patience=patience, verbose=False)
+    trainer = Trainer(epochs=epochs, learning_rate=lr,
+                      callbacks=[early_stop], device=str(device))
+    trainer.fit(model, train_loader, val_loader)
+

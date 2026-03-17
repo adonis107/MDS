@@ -62,31 +62,47 @@ for level in range(1, 11):
 
 
 def fix_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Fix the column-header misalignment in the raw CSV files.
+    """Fix the column-header misalignment present in raw files.
 
-    The raw files have an extra empty header field after 'xltime', which
-    pandas reads as 'Unnamed: 1'.  This shifts every subsequent column
-    name one position to the right, so the last column is all-NaN.
+    Two variants are observed across the raw files:
 
-    Fix: keep 'xltime', rename columns 1..N-2 with the correct LOB names,
-    and drop the trailing NaN column.
+    - 42-column files (CSV + some parquets): a spurious second column
+      ('Unnamed: 1' / 'V2') is inserted after 'xltime', shifting all LOB
+      names one position right and leaving the last column NaN/garbage.
+      Fix: drop the last column, then rename all 41.
+
+    - 41-column files (some parquets): the parquet was written with the
+      first data row used as column headers (data values as names, e.g.
+      '42738.21...', '46.49', …).  No extra column — just wrong names.
+      Fix: rename all 41 columns directly.
+
+    If the DataFrame already has the correct column names, it is returned
+    unchanged.
     """
     new_names = [TIME_COL] + LOB_COLUMNS
-    if len(df.columns) != len(new_names) + 1:
-        logger.warning(
-            "Unexpected column count %d (expected %d). Skipping column fix.",
-            len(df.columns), len(new_names) + 1,
-        )
+
+    if list(df.columns) == new_names:
         return df
 
-    # Drop the last column (all-NaN artefact) and reassign names
-    df = df.iloc[:, :-1].copy()
-    df.columns = new_names
+    if len(df.columns) == len(new_names) + 1:
+        df = df.iloc[:, :-1].copy()
+        df.columns = new_names
+    elif len(df.columns) == len(new_names):
+        df = df.copy()
+        df.columns = new_names
+    else:
+        logger.warning(
+            "Unexpected column count %d (expected %d or %d). Skipping column fix.",
+            len(df.columns), len(new_names), len(new_names) + 1,
+        )
     return df
 
 
 def clean_lob(df: pd.DataFrame) -> pd.DataFrame:
-    """Sort by time column."""
+    """Sort by time column and coerce LOB columns to numeric."""
+    for col in LOB_COLUMNS:
+        if col in df.columns and df[col].dtype == "object":
+            df[col] = pd.to_numeric(df[col], errors="coerce")
     if TIME_COL in df.columns:
         df = df.sort_values(TIME_COL).reset_index(drop=True)
     return df
@@ -154,7 +170,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 def process_file(filepath: str) -> None:
     """Process a single raw daily file and save to parquet."""
     basename = os.path.basename(filepath)
-    day_name = basename.replace(".csv.gz", "").replace(".csv", "")
+    day_name = basename.replace(".csv.gz", "").replace(".csv", "").replace(".parquet", "")
     out_path = os.path.join(OUT_DIR, f"{day_name}.parquet")
 
     if os.path.exists(out_path):
@@ -162,7 +178,11 @@ def process_file(filepath: str) -> None:
         return
 
     logger.info("  Loading %s ...", basename)
-    df = pd.read_csv(filepath)
+    if filepath.endswith(".parquet"):
+        import pyarrow.parquet as pq
+        df = pq.ParquetFile(filepath).read().to_pandas()
+    else:
+        df = pd.read_csv(filepath)
 
     # Fix column alignment
     df = fix_columns(df)
@@ -198,9 +218,12 @@ def process_file(filepath: str) -> None:
 
 
 def main():
-    files = sorted(glob.glob(os.path.join(RAW_DIR, "*.csv.gz")))
+    files = sorted(
+        glob.glob(os.path.join(RAW_DIR, "*.csv.gz")) +
+        glob.glob(os.path.join(RAW_DIR, "*.parquet"))
+    )
     if not files:
-        logger.error("No .csv.gz files found in %s", RAW_DIR)
+        logger.error("No .csv.gz or .parquet files found in %s", RAW_DIR)
         sys.exit(1)
 
     logger.info("Found %d raw files in %s", len(files), RAW_DIR)

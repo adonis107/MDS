@@ -56,6 +56,6 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 # so rerunning this same script continues automatically after timeout.
 cd "$PROJECT_ROOT"
 
-python training.py
+python train.py
 
 echo "=== Training finished ==="

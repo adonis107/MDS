@@ -1,16 +1,16 @@
 #!/bin/bash
 # ============================================================
-#  Slurm job script — Market Manipulation Training
+#  Slurm job script — Market Manipulation Testing
 #  Ruche cluster (CentraleSupélec / Paris-Saclay mesocentre)
 #
-#  Submit with:  sbatch submit_training.sh
+#  Submit with:  sbatch submit_testing.sh
 # ============================================================
 
-#SBATCH --job-name=mds_training
-#SBATCH --output=%x.o%j          # stdout  →  mds_training.o<jobid>
-#SBATCH --error=%x.e%j           # stderr  →  mds_training.e<jobid>
+#SBATCH --job-name=mds_testing
+#SBATCH --output=%x.o%j          # stdout  →  mds_testing.o<jobid>
+#SBATCH --error=%x.e%j           # stderr  →  mds_testing.e<jobid>
 #SBATCH --mail-type=ALL           # email on BEGIN / END / FAIL
-#SBATCH --mail-user=adonis.jamal@student-cs.fr   # <-- replace with your address
+#SBATCH --mail-user=adonis.jamal@student-cs.fr
 
 # ── Resources ────────────────────────────────────────────────
 #SBATCH --partition=gpua100       # A100-40 GB (fastest; 24 h max)
@@ -18,9 +18,9 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8        # data-loader workers + overhead
-#SBATCH --gres=gpu:1             # one GPU is enough (single-node)
+#SBATCH --gres=gpu:1             # one GPU for inference
 #SBATCH --mem=40G                # matches ~1× A100 node RAM budget
-#SBATCH --time=24:00:00          # max walltime on gpua100/gpu partitions
+#SBATCH --time=12:00:00          # testing is faster than training
 # ─────────────────────────────────────────────────────────────
 
 # -- do NOT inherit the submission environment --
@@ -30,7 +30,6 @@
 set -euo pipefail
 
 # == 1. Project root on the cluster ===========================
-# Adjust this path after uploading your project to $HOME.
 PROJECT_ROOT="$HOME/MDS-PDMM"
 
 # == 2. Conda environment name ================================
@@ -49,14 +48,12 @@ echo "=== Python: $(which python) ==="
 echo "=== PyTorch CUDA: $(python -c 'import torch; print(torch.cuda.is_available(), torch.version.cuda)')"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
-# == 6. Run training ==========================================
-# train.py uses relative paths from the project root
-# (data/processed/... and results/<TRAIN_YEAR>/)
-# Set TRAIN_YEAR in train.py to "2015" or "2017" before submitting.
-# It now checkpoints progress per day into results/<TRAIN_YEAR>/resume_state,
-# so rerunning this same script continues automatically after timeout.
+# == 6. Run testing ==========================================
+# test.py uses relative paths from the project root
+# (data/processed/... and results/<TRAIN_YEAR>/test_output/)
+# Set TRAIN_YEAR in test.py to "2015" or "2017" before submitting.
 cd "$PROJECT_ROOT"
 
-python train.py
+python test.py
 
-echo "=== Training finished ==="
+echo "=== Testing finished ==="

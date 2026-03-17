@@ -28,7 +28,7 @@ from detection.data.loaders import create_sequences, load_processed, scale_and_c
 from detection.data.preprocessing import split_first_hour_blocks
 from detection.data.scalers import scaler as QuantileScaler
 from detection.models.hybrid import TransformerOCSVM
-from detection.models.prae import calculate_heuristic_lambda, grid_search_lambda
+from detection.models.prae import calculate_heuristic_lambda, calculate_reconstruction_lambda, grid_search_lambda
 from detection.trainers.checkpoint import (
     clear_resume_state,
     final_artifacts_exist,
@@ -55,7 +55,8 @@ logger.info("Device: %s", DEVICE)
 # %%
 # Paths
 DATA_DIR = os.path.join("data", "processed", "TOTF.PA-book")
-RESULTS_DIR = os.path.join("results")
+TRAIN_YEAR = "2015"  # "2015" or "2017"
+RESULTS_DIR = os.path.join("results", TRAIN_YEAR)
 RESUME_DIR = os.path.join(RESULTS_DIR, "resume_state")
 os.makedirs(RESULTS_DIR, exist_ok=True)
 os.makedirs(RESUME_DIR, exist_ok=True)
@@ -222,6 +223,13 @@ for model_type in MODEL_TYPES:
         if model_type == "prae":
             n_samples = len(train_loader.dataset)
             model.mu = torch.nn.Parameter(torch.full((n_samples,), 0.5, device=DEVICE))
+            # Recompute lambda relative to current reconstruction error so that
+            # the gates can actually differentiate outliers from inliers even
+            # when the backbone is already well-trained from prior days.
+            if prae_lambda is not None:
+                rec_lambda = calculate_reconstruction_lambda(model, train_loader, device=str(DEVICE))
+                model.lambda_reg = rec_lambda
+                logger.info("PRAE lambda_reg recalibrated to %.4f (mean rec error)", rec_lambda)
 
         train_one_block(model, detector, train_loader, val_loader, model_type,
                         PATIENCE, EPOCHS, LR, DEVICE)

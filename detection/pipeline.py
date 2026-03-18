@@ -317,7 +317,7 @@ class AnomalyDetectionPipeline:
                 f"Target column '{target_col}' not found in features."
             )
 
-        # -- scaling ----------------------------------------------------
+        # -- scaling setup ----------------------------------------------
         logger.info("Scaling with method: %s", scaler_name)
         scaler_cls = SCALER_REGISTRY.get(scaler_name)
         if scaler_cls is None:
@@ -326,39 +326,46 @@ class AnomalyDetectionPipeline:
                 f"Choose from {list(SCALER_REGISTRY)}"
             )
 
-        self.scaler = scaler_cls()
+        # -- chronological split on raw data first ----------------------
+        # n_total is the number of sequences that would be produced from the
+        # full array; splitting here avoids ever materialising all sequences.
         data_values = features_df.values.astype(np.float32)
-        scaled_data = self.scaler.fit_transform(data_values).astype(np.float32)
+        n_total = len(data_values) - seq_length
+        train_end = int(n_total * train_ratio)
+        val_end = int(n_total * (train_ratio + val_ratio))
 
-        # -- sequencing -------------------------------------------------
-        sequences = create_sequences(scaled_data, seq_length)
+        train_raw = data_values[: train_end + seq_length]
+        val_raw = data_values[train_end : val_end + seq_length]
+        test_raw = data_values[val_end :]
+
+        # Fit scaler on training portion only (no leakage)
+        self.scaler = scaler_cls()
+        train_scaled = self.scaler.fit_transform(train_raw).astype(np.float32)
+        val_scaled = self.scaler.transform(val_raw).astype(np.float32)
+        test_scaled = self.scaler.transform(test_raw).astype(np.float32)
+
+        # -- sequencing per split (avoids one giant intermediate array) -
+        x_train = torch.from_numpy(create_sequences(train_scaled, seq_length))
+        x_val = torch.from_numpy(create_sequences(val_scaled, seq_length))
+        x_test = torch.from_numpy(create_sequences(test_scaled, seq_length))
         logger.info(
-            "Created %d sequences of length %d.", len(sequences), seq_length
+            "Created sequences  --  Train: %d | Val: %d | Test: %d",
+            len(x_train), len(x_val), len(x_test),
         )
 
         # Targets for PNN (next-step log_return)
         target_idx = self.feature_names.index(target_col)
-        targets = scaled_data[seq_length:, target_idx]
-
-        # -- chronological split ----------------------------------------
-        n_total = len(sequences)
-        train_end = int(n_total * train_ratio)
-        val_end = int(n_total * (train_ratio + val_ratio))
-
-        x_train = torch.tensor(sequences[:train_end], dtype=torch.float32)
-        x_val = torch.tensor(sequences[train_end:val_end], dtype=torch.float32)
-        x_test = torch.tensor(sequences[val_end:], dtype=torch.float32)
 
         # -- build datasets per model type ------------------------------
         if model_type == "pnn":
-            y_train = torch.tensor(
-                targets[:train_end], dtype=torch.float32
+            y_train = torch.from_numpy(
+                train_scaled[seq_length:, target_idx]
             ).unsqueeze(1)
-            y_val = torch.tensor(
-                targets[train_end:val_end], dtype=torch.float32
+            y_val = torch.from_numpy(
+                val_scaled[seq_length:, target_idx]
             ).unsqueeze(1)
-            y_test = torch.tensor(
-                targets[val_end:], dtype=torch.float32
+            y_test = torch.from_numpy(
+                test_scaled[seq_length:, target_idx]
             ).unsqueeze(1)
 
             train_ds = TensorDataset(

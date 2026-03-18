@@ -55,15 +55,22 @@ class Trainer:
                         
 
 def train_one_block(model, detector, train_loader, val_loader, model_type,
-                    patience, epochs, lr, device):
+                    patience, epochs, lr, device, results_dir="."):
+    import os
+
     if model_type == "transformer_ocsvm":
+        # Update the existing callback path to be job-specific
         for cb in detector.trainer.callbacks:
             if isinstance(cb, EarlyStopping):
+                cb.path = os.path.join(results_dir, f"{model_type}_checkpoint.pth")
                 cb.reset()
         detector.trainer.fit(detector.transformer, train_loader, val_loader)
         return
 
-    early_stop = EarlyStopping(patience=patience, verbose=False)
+    ckpt_path = os.path.join(results_dir, f"{model_type}_checkpoint.pth")
+    if os.path.exists(ckpt_path):
+        os.remove(ckpt_path)
+    early_stop = EarlyStopping(patience=patience, verbose=False, path=ckpt_path)
     trainer = Trainer(epochs=epochs, learning_rate=lr,
                       callbacks=[early_stop], device=str(device))
     trainer.fit(model, train_loader, val_loader)

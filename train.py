@@ -98,7 +98,7 @@ LOB_COLUMNS = [
 
 # File listing
 FILES = sorted(glob.glob(os.path.join(DATA_DIR, "*.parquet")))
-NUM_TRAIN_DAYS = len(FILES) - 3  # Last 3 days are held out for testing
+NUM_TRAIN_DAYS = len(FILES) - 11  # Last 3 days are held out for testing
 logger.info("Found %d daily files.  Training on %d days, testing on day %d.", len(FILES), NUM_TRAIN_DAYS, len(FILES))
 
 
@@ -232,7 +232,7 @@ for model_type in MODEL_TYPES:
                 logger.info("PRAE lambda_reg recalibrated to %.4f (mean rec error)", rec_lambda)
 
         train_one_block(model, detector, train_loader, val_loader, model_type,
-                        PATIENCE, EPOCHS, LR, DEVICE)
+                        PATIENCE, EPOCHS, LR, DEVICE, results_dir=RESULTS_DIR)
 
         training_log.append({
             "model": model_type,

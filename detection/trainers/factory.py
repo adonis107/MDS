@@ -18,7 +18,8 @@ def build_fresh_model(
     if model_type == "transformer_ocsvm":
         transformer = BottleneckTransformer(
             num_features=num_features, sequence_length=seq_length, **transformer_cfg)
-        early_stop = EarlyStopping(patience=patience, verbose=False)
+        early_stop = EarlyStopping(patience=patience, verbose=False,
+                                   path='transformer_ocsvm_checkpoint.pth')
         trainer = Trainer(
             epochs=epochs, learning_rate=lr,
             callbacks=[early_stop], device=str(device))

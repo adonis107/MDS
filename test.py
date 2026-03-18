@@ -59,8 +59,8 @@ logger.info("Device: %s", DEVICE)
 # ── Paths ──────────────────────────────────────────────────────────
 DATA_DIR = os.path.join("data", "processed", "TOTF.PA-book")
 TRAIN_YEAR = "2015"  # "2015" or "2017" — selects which trained models to load
-RESULTS_DIR = os.path.join("results", TRAIN_YEAR)
-OUTPUT_DIR = os.path.join("results", TRAIN_YEAR, "test_output")
+RESULTS_DIR = os.path.join("results", str(TRAIN_YEAR))
+OUTPUT_DIR = os.path.join("results", str(TRAIN_YEAR), "test_output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # ── Test file selection ────────────────────────────────────────────

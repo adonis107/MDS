@@ -61,6 +61,15 @@ RESUME_DIR = os.path.join(RESULTS_DIR, "resume_state")
 os.makedirs(RESULTS_DIR, exist_ok=True)
 os.makedirs(RESUME_DIR, exist_ok=True)
 
+# File listing
+FILES = sorted(glob.glob(os.path.join(DATA_DIR, "*.parquet")))
+NUM_TRAIN_DAYS = len(FILES) - 11  # Last 3 days are held out for testing
+logger.info("Found %d daily files.  Training on %d days, testing on day %d.", len(FILES), NUM_TRAIN_DAYS, len(FILES))
+
+# %% [markdown]
+# ## Model Types
+MODEL_TYPES = ["transformer_ocsvm", "pnn", "prae"]
+
 # Data parameters
 TIME_COL = "xltime"
 MARKET_OPEN_HOUR = 9.0   # Euronext Paris continuous session
@@ -96,25 +105,7 @@ LOB_COLUMNS = [
     for side, typ in [("bid","price"),("bid","volume"),("ask","price"),("ask","volume")]
 ]
 
-# File listing
-FILES = sorted(glob.glob(os.path.join(DATA_DIR, "*.parquet")))
-NUM_TRAIN_DAYS = len(FILES) - 11  # Last 3 days are held out for testing
-logger.info("Found %d daily files.  Training on %d days, testing on day %d.", len(FILES), NUM_TRAIN_DAYS, len(FILES))
 
-
-# %% [markdown]
-# ## Sequential Training Loop
-# 
-# For each of the 24 training days and for each model type:
-# 
-# 1. Load pre-processed parquet (features already computed).
-# 2. Split the first hour into 5-min train/val blocks.
-# 3. Scale, sequence, and build DataLoaders.
-# 4. Train the model on that block (continuing from the previous day's weights).
-# 5. After all days, save the final model weights and scaler.
-
-# %%
-MODEL_TYPES = ["transformer_ocsvm", "pnn", "prae"]
 
 # Storage for trained artefacts
 trained_models = {}   # model_type -> (model, detector_or_None)
@@ -223,10 +214,12 @@ for model_type in MODEL_TYPES:
         if model_type == "prae":
             n_samples = len(train_loader.dataset)
             model.mu = torch.nn.Parameter(torch.full((n_samples,), 0.5, device=DEVICE))
-            # Recompute lambda relative to current reconstruction error so that
-            # the gates can actually differentiate outliers from inliers even
-            # when the backbone is already well-trained from prior days.
-            if prae_lambda is not None:
+            # Recalibrate lambda on days 2+ where the backbone is already
+            # trained and the raw-energy heuristic overestimates the error
+            # scale.  On day 0 the grid-searched lambda is already correct;
+            # overwriting it with the untrained backbone's large rec error
+            # would inflate lambda and prevent any mu from dropping.
+            if prae_lambda is not None and day_idx > 0:
                 rec_lambda = calculate_reconstruction_lambda(model, train_loader, device=str(DEVICE))
                 model.lambda_reg = rec_lambda
                 logger.info("PRAE lambda_reg recalibrated to %.4f (mean rec error)", rec_lambda)

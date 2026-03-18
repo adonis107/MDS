@@ -4,11 +4,13 @@ import torch.nn as nn
 from detection.trainers.callbacks import EarlyStopping
 
 class Trainer:
-    def __init__(self, epochs=1000, learning_rate=1e-3, callbacks=None, device='cuda'):
+    def __init__(self, epochs=1000, learning_rate=1e-3, callbacks=None, device='cuda',
+                 monitor='val_loss'):
         self.epochs = epochs
         self.lr = learning_rate
         self.callbacks = callbacks or []
         self.device = torch.device(device if torch.cuda.is_available() else 'cpu')
+        self.monitor = monitor
 
     def fit(self, model, train_loader, val_loader):
         model.to(self.device)
@@ -38,10 +40,12 @@ class Trainer:
 
             print(f'Epoch {epoch+1}/{self.epochs} - Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}')
 
+            monitored_loss = train_loss if self.monitor == 'train_loss' else val_loss
+
             stop = False
             for callback in self.callbacks:
                 if isinstance(callback, EarlyStopping):
-                    callback(val_loss, model)
+                    callback(monitored_loss, model)
                     if callback.early_stop:
                         print("Early stopping triggered")
                         # Reload the best model checkpoint saved by EarlyStopping
@@ -71,7 +75,12 @@ def train_one_block(model, detector, train_loader, val_loader, model_type,
     if os.path.exists(ckpt_path):
         os.remove(ckpt_path)
     early_stop = EarlyStopping(patience=patience, verbose=False, path=ckpt_path)
+
+    # PRAE: monitor train loss (which includes the mu-gate objective) because
+    # the val loss is plain reconstruction and does not reflect mu convergence.
+    monitor = 'train_loss' if model_type == 'prae' else 'val_loss'
     trainer = Trainer(epochs=epochs, learning_rate=lr,
-                      callbacks=[early_stop], device=str(device))
+                      callbacks=[early_stop], device=str(device),
+                      monitor=monitor)
     trainer.fit(model, train_loader, val_loader)
 

@@ -28,7 +28,7 @@ from detection.data.loaders import create_sequences, load_processed, scale_and_c
 from detection.data.preprocessing import split_first_hour_blocks
 from detection.data.scalers import scaler as QuantileScaler
 from detection.models.hybrid import TransformerOCSVM
-from detection.models.prae import calculate_heuristic_lambda, calculate_reconstruction_lambda, grid_search_lambda
+from detection.models.prae import calculate_heuristic_lambda, grid_search_lambda
 from detection.trainers.checkpoint import (
     clear_resume_state,
     final_artifacts_exist,
@@ -214,15 +214,12 @@ for model_type in MODEL_TYPES:
         if model_type == "prae":
             n_samples = len(train_loader.dataset)
             model.mu = torch.nn.Parameter(torch.full((n_samples,), 0.5, device=DEVICE))
-            # Recalibrate lambda on days 2+ where the backbone is already
-            # trained and the raw-energy heuristic overestimates the error
-            # scale.  On day 0 the grid-searched lambda is already correct;
-            # overwriting it with the untrained backbone's large rec error
-            # would inflate lambda and prevent any mu from dropping.
-            if prae_lambda is not None and day_idx > 0:
-                rec_lambda = calculate_reconstruction_lambda(model, train_loader, device=str(DEVICE))
-                model.lambda_reg = rec_lambda
-                logger.info("PRAE lambda_reg recalibrated to %.4f (mean rec error)", rec_lambda)
+            # Keep the grid-searched lambda throughout all days.
+            # calculate_reconstruction_lambda returns the per-sample total
+            # squared error (summed over seq_len × features), which is orders
+            # of magnitude larger than the grid-searched value and causes the
+            # regularisation term to dominate, pushing all gates to extremes
+            # and eventually producing NaN.
 
         train_one_block(model, detector, train_loader, val_loader, model_type,
                         PATIENCE, EPOCHS, LR, DEVICE, results_dir=RESULTS_DIR)

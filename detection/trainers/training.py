@@ -24,6 +24,7 @@ class Trainer:
                 optimizer.zero_grad()
                 loss = model.training_step(batch)
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
                 train_loss += loss.item()
 

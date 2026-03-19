@@ -80,6 +80,12 @@ class PRAE(BaseDeepModel):
         )
 
         rec_error = torch.sum((x - reconstructed) ** 2, dim=tuple(range(1, x.dim())))
+        # Clamp rec_error to prevent overflow to Inf.  When mu drifts
+        # negative the gate z is clamped to 0, masking that sample out of
+        # the loss.  The backbone then receives no gradient to reconstruct
+        # it, so its rec_error grows unboundedly.  In IEEE 754,
+        # 0.0 * Inf = NaN, which poisons the entire loss and all gradients.
+        rec_error = torch.clamp(rec_error, max=1e6)
 
         if z is not None:
             # PRAE-ℓ₁ loss (Lindenbaum et al.):

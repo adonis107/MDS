@@ -23,6 +23,9 @@ class Trainer:
             for batch in train_loader:
                 optimizer.zero_grad()
                 loss = model.training_step(batch)
+                if not torch.isfinite(loss):
+                    optimizer.zero_grad()   # discard poisoned gradients
+                    continue
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()

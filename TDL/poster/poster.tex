@@ -1,0 +1,176 @@
+\documentclass[final]{beamer}
+\usepackage[orientation=portrait,size=a2,scale=1.35]{beamerposter}     
+\geometry{hmargin=1.5cm,}
+\usepackage[utf8]{inputenc}
+\linespread{1.08}
+
+% Custom theme
+\usetheme{sharelatex}
+\definecolor{primary}{RGB}{160,32,60}
+
+% Packages
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{shapes, arrows.meta, positioning, calc, fit}
+
+% Title, authors, date
+\title[Theoretical Principles of Deep Learning]{On Exact Computation with an Infinitely Wide Neural Net \\ \vspace{0.6em} Arora et al. (2019)}
+\author{Review by Adonis Jamal}
+\institute[CentraleSupélec]{CentraleSupélec}
+\date{\today}
+
+
+% ==============================================================================
+% ================================== DOCUMENT ==================================  
+% ==============================================================================
+\begin{document}
+\begin{frame}[t]
+\begin{multicols}{2}
+
+
+% ==============================================================================
+% SECTION: CONTEXT AND MOTIVATION
+% ==============================================================================
+\section{Context and Motivation}
+\textbf{The Goal:} Compute the exact performance of infinitely wide Convolutional Neural Networks (CNNs) without Monte Carlo approximations.
+
+\textbf{The Gap:} Prior work could not combine exactness with CNN architectures (pooling was the bottleneck).
+
+\vspace{0.5em}
+\begin{center}
+  \begin{tabular}{l c c c}
+    \toprule
+    \textbf{Method} & \textbf{Exact?} & \textbf{CNN Support?} & \textbf{Pooling?} \\
+    \midrule
+    Standard NTK \cite{jacot2020NTK} & Yes & No (FC only) & No \\
+    Monte Carlo Approx. & No & Yes & Yes \\
+    \textbf{CNTK (This Paper)} & \textbf{Yes} & \textbf{Yes} & \textbf{Yes} \\
+    \bottomrule
+  \end{tabular}
+\end{center}
+\vspace{0.5em}
+
+\textbf{Key Contribution:} Derivation of the \textbf{Convolutional Neural Tangent Kernel (CNTK)} using a dynamic programming approach that runs efficiently on GPUs \cite{main}.
+
+
+% ==============================================================================
+% SECTION: THEORETICAL GUARANTEE: LAZY TRAINING
+% ==============================================================================
+\section{Theoretical Guarantee: Lazy Training}
+\textbf{Theorem:} As width $m \to \infty$, a fully-trained net is equivalent to Kernel Regression using the CNTK.
+
+\subsection{Gradient Flow}
+Training evolves as $\frac{du(t)}{dt} = - H(t)(u(t) - y)$, where $H(t)$ is the tangent kernel.
+
+\subsection{Frozen Kernel}
+Weights stay close to initialization ($\|W(t) - W(0)\|_F \to 0$), the kernel remains constant: $H(t) \approx H(0) = \Theta_{CNTK}$.
+
+\subsection{The Solution}
+$$f^*(x) = K(x, X_{\mathrm{train}}) K(X_{\mathrm{train}}, X_{\mathrm{train}})^{-1} Y_{\mathrm{train}}$$
+
+
+% ==============================================================================
+% SECTION: METHODOLOGY (ALGORITHM)
+% ==============================================================================
+\section{The Exact CNTK Algorithm}
+\begin{center}
+  \begin{tikzpicture}[
+    node distance=0.6cm and 0.4cm,
+    auto,
+    font=\footnotesize,
+    block/.style={rectangle, draw=primary, fill=primary!5, text width=5.5em, align=center, rounded corners, minimum height=3.5em},
+    arrow/.style={-Latex, thick, primary}
+    ]
+
+    \node[block, text width=4.5em] (input) {Input Images \\ $x, x'$};
+    \node[block, right=of input] (cov) {Base Covariance \\ $\Sigma^{(0)} = x^\top x'$};
+    \node[block, right=of cov, text width=7.5em] (layer) {\textbf{Layerwise Recursion} \\ $\Sigma^{(h)}$ (Activation) \\ $\dot{\Sigma}^{(h)}$ (Gradient)};
+    \node[block, right=of layer] (kernel) {Final Kernel \\ $\Theta^{(L)}(x, x')$};
+    \node[block, right=of kernel] (pred) {Regression \\ $y^* = K_{te} K_{tr}^{-1} y$};
+
+    \draw[arrow] (input) -- (cov);
+    \draw[arrow] (cov) -- (layer);
+    \draw[arrow] (layer) -- (kernel);
+    \draw[arrow] (kernel) -- (pred);
+  \end{tikzpicture}
+\end{center}
+
+\subsection{Closed-Form ReLU Kernels}
+For input correlation $\rho = \frac{\Sigma_{12}}{\sqrt{\Sigma_{11}\Sigma_{22}}}$, the ReLU integrals have closed forms:
+
+\begin{itemize}
+  \item \text{Activation: } $\Sigma = \frac{\sqrt{\Sigma_{11}\Sigma_{22}}}{2\pi} \left( \rho (\pi - \arccos \rho) + \sqrt{1 - \rho^2} \right)$
+  \item \text{Gradient: } $\dot{\Sigma} = \frac{1}{2\pi} (\pi - \arccos \rho)$
+\end{itemize}
+
+\subsection{CNTK Recurrence (Dynamic Programming)}
+The final kernel $\Theta^{(L)}$ is computed recursively, combining the activation ($\Sigma \propto K$) and gradient ($\dot{\Sigma} \propto \dot{K}$) covariances: $$\Theta^{(h)} = \underbrace{\dot{K}^{(h)} \odot \Theta^{(h-1)}}_{\text{Backward Pass}} + \underbrace{K^{(h)}}_{\text{Forward Pass}}$$
+
+\subsection{Global Average Pooling (GAP)}
+Standard CNNs flatten the output, hurting shift invariance. GAP averages the kernel over spatial dimensions ($P \times P$) at the final layer, making the kernel translation invariant and significantly boosting accuracy.
+
+
+% ==============================================================================
+% SECTION: REPRODUCTION AND RESULTS
+% ==============================================================================
+\section{Reproduction and Results}
+\textbf{Setup:} PyTorch implementation on CIFAR-10 subset ($N_{train}=200$, $N_{test}=100$).
+
+\textbf{Computational Complexity:} $O(N^2 P^2 Q^2 L)$ time, quadratic in dataset size, limiting scalability.
+
+\vspace{0.5em}
+\begin{table}
+  \centering
+  \begin{tabular}{lcc}
+    \toprule
+    \textbf{Architecture} & \textbf{Paper Acc.} & \textbf{Reproduced Acc.} \\
+    \midrule
+    CNTK-Vanilla & 66.03\% & 25.00\% \\
+    \textbf{CNTK-GAP} & \textbf{76.73\%} & \textbf{37.00\%} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+\vspace{0.5em}
+
+\textbf{Depth Gap:} While Finite CNNs benefit from depth, the infinite CNTK performance saturates or even degrades after $\approx 11$ layers.
+
+\begin{center}
+  \includegraphics[width=0.95\linewidth]{../results/extension/depth_gap_analysis.png}
+\end{center}
+\textit{*Lower absolute accuracy is expected due to small dataset size and lack of kernel regularization; qualitative trends match the paper.}
+
+
+% ==============================================================================
+% SECTION: CRITICAL DISCUSSION
+% ==============================================================================
+\section{Critical Discussion}
+\subsection{Performance Gap and Scalability}
+Despite exact computation, CNTK (77\%) still trails Finite CNNs (83\%). Moreover, exact CNTK scales as $O(N^2)$, making it computationally intractable for datasets like ImageNet without approximation.
+
+\subsection{Feature Learning}
+The "Lazy Training" regime fixes features at initialization. The performance gap suggests that \textit{feature adaptation} (weights moving far from init) is crucial for SOTA performance.
+
+\subsection{Impact}
+Despite the performance gap, CNTK provides a deterministic way to study deep learning optimization without the noise of SGD sampling or initialization.
+
+% \begin{itemize}
+%   \item \textbf{Performance Gap:} Despite exact computation, CNTK (77\%) still trails Finite CNNs (83\%).
+%   \item \textbf{Feature Learning:} The "Lazy Training" regime fixes features at initialization. The performance gap suggests that \textit{feature adaptation} (weights moving far from init) is crucial for SOTA performance.
+%   \item \textbf{Scalability:} Exact CNTK scales as $O(N^2)$, making it computationally intractable for datasets like ImageNet without approximation.
+%   \item \textbf{Impact:} Despite the performance gap, CNTK provides a deterministic way to study deep learning optimization without the noise of SGD sampling or initialization.
+% \end{itemize}
+
+
+% ==============================================================================
+% SECTION: REFERENCES
+% ==============================================================================
+\section{References}
+\bibliographystyle{plain}
+\bibliography{bibliography}
+
+
+\end{multicols}
+\end{frame}
+\end{document}

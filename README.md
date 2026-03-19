@@ -114,6 +114,7 @@ Interactive notebooks provide step-by-step analysis and visualization:
 | 4 | Sensitivity Analysis | Feature attribution via Integrated Gradients and Grouped Occlusion |
 | 5 | Threshold Analysis | Comparison of POT, DSPOT, RFDR and percentile-based methods |
 | 6 | Anomaly Clustering | Clustering of detected anomalies to identify patterns and potential spoofing events |
+| 7 | Jump Analysis | Analysis of feature jumps around detected anomalies to understand market impact and potential spoofing signatures |
 
 ## Models at a Glance
 

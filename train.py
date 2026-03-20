@@ -84,7 +84,7 @@ TARGET_COL = "log_return"
 
 # Training
 EPOCHS = 1000
-LR = 1e-3
+LR = 1e-4
 PATIENCE = 20
 
 # Model architectures

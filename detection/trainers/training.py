@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 
@@ -20,16 +22,26 @@ class Trainer:
             # Training
             model.train()
             train_loss = 0
+            n_ok = 0
             for batch in train_loader:
                 optimizer.zero_grad()
                 loss = model.training_step(batch)
                 if not torch.isfinite(loss):
-                    optimizer.zero_grad()   # discard poisoned gradients
                     continue
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                # clip_grad_norm_ returns the total gradient norm.  If any
+                # gradient is NaN (e.g. from LayerNorm / softmax overflow),
+                # the returned norm is NaN and the clipping multiplies all
+                # gradients by NaN — corrupting every weight on .step().
+                # Detect this and skip the update entirely.
+                grad_norm = torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), max_norm=1.0)
+                if not math.isfinite(grad_norm):
+                    optimizer.zero_grad()
+                    continue
                 optimizer.step()
                 train_loss += loss.item()
+                n_ok += 1
 
             # Validation
             model.eval()
@@ -38,8 +50,8 @@ class Trainer:
                 for batch in val_loader:
                     loss = model.training_step(batch)
                     val_loss += loss.item()
-            
-            train_loss /= len(train_loader)
+
+            train_loss = train_loss / max(n_ok, 1)
             val_loss /= len(val_loader)
 
             print(f'Epoch {epoch+1}/{self.epochs} - Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}')

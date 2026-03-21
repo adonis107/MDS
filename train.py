@@ -214,12 +214,6 @@ for model_type in MODEL_TYPES:
         if model_type == "prae":
             n_samples = len(train_loader.dataset)
             model.mu = torch.nn.Parameter(torch.full((n_samples,), 0.5, device=DEVICE))
-            # Keep the grid-searched lambda throughout all days.
-            # calculate_reconstruction_lambda returns the per-sample total
-            # squared error (summed over seq_len × features), which is orders
-            # of magnitude larger than the grid-searched value and causes the
-            # regularisation term to dominate, pushing all gates to extremes
-            # and eventually producing NaN.
 
         train_one_block(model, detector, train_loader, val_loader, model_type,
                         PATIENCE, EPOCHS, LR, DEVICE, results_dir=RESULTS_DIR)

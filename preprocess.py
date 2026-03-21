@@ -104,6 +104,7 @@ def clean_lob(df: pd.DataFrame) -> pd.DataFrame:
         if col in df.columns and df[col].dtype == "object":
             df[col] = pd.to_numeric(df[col], errors="coerce")
     if TIME_COL in df.columns:
+        df[TIME_COL] = pd.to_numeric(df[TIME_COL], errors="coerce")
         df = df.sort_values(TIME_COL).reset_index(drop=True)
     return df
 

@@ -66,6 +66,8 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # ── Test file selection ────────────────────────────────────────────
 # Option 1: Explicit list of patterns (matched against DATA_DIR)
 TEST_FILE_PATTERNS = [
+    "2009-*",
+    "2010-*",
     "2015-02-03*",  # last 3 of 2015
     "2015-02-04*",
     "2015-02-05*",
@@ -91,7 +93,7 @@ logger.info("Test files (%d):", len(TEST_FILES))
 for f in TEST_FILES:
     logger.info("  %s", os.path.basename(f))
 
-# ── Model / data parameters (must match training) ─────────────────
+# Model / data parameters (must match training)
 MODEL_TYPES = ["transformer_ocsvm", "pnn", "prae"]
 SEQ_LENGTH = 25
 BATCH_SIZE = 64
@@ -102,7 +104,7 @@ LOB_COLUMNS = [
     for side, typ in [("bid", "price"), ("bid", "volume"), ("ask", "price"), ("ask", "volume")]
 ]
 
-# ── Threshold parameters ──────────────────────────────────────────
+# Threshold parameters
 # RFDR (PRAE)
 RFDR_WINDOW = 500
 RFDR_ALPHA = 0.05
@@ -120,7 +122,6 @@ PERIODS = {
     "rest_of_morning": (10.0, 12.0),
     "afternoon":       (12.0, 15.5),
     "american_open":   (15.5, 17.5),
-    "aftermarket":     (17.5, 24.0),
 }
 
 # %% [markdown]
@@ -228,7 +229,7 @@ for file_idx, test_file in enumerate(TEST_FILES):
             del x_tensor, ds, loader
             preds = (scores > 0).astype(int)
 
-        # ── PNN + Spoofing Gain ────────────────────────────────────
+        # PNN + Spoofing Gain
         elif model_type == "pnn":
             target_col = "log_return"
             all_mu, all_sigma, all_alpha = [], [], []
@@ -265,7 +266,7 @@ for file_idx, test_file in enumerate(TEST_FILES):
             )
             preds = (scores > 0).astype(int)
 
-        # ── PRAE + RFDR ───────────────────────────────────────────
+        # PRAE + RFDR
         elif model_type == "prae":
             x_tensor = torch.tensor(sequences, dtype=torch.float32)
             ds = TensorDataset(x_tensor, x_tensor)
@@ -313,16 +314,16 @@ for mt in MODEL_TYPES:
 # ## Save Results
 
 # %%
-# ── 1. Per-model raw scores and predictions ────────────────────────
+# 1. Per-model raw scores and predictions
 for mt in MODEL_TYPES:
     np.save(os.path.join(OUTPUT_DIR, f"{mt}_scores.npy"), all_scores[mt])
     np.save(os.path.join(OUTPUT_DIR, f"{mt}_preds.npy"), all_preds[mt])
     logger.info("Saved scores & preds for %s", mt)
 
-# ── 2. Period labels ───────────────────────────────────────────────
+# 2. Period labels
 np.save(os.path.join(OUTPUT_DIR, "period_labels.npy"), period_labels_seq)
 
-# ── 3. Day boundaries and names ───────────────────────────────────
+# 3. Day boundaries and names
 meta = {
     "day_names": day_names,
     "day_boundaries": day_boundaries,
@@ -338,7 +339,7 @@ meta = {
 with open(os.path.join(OUTPUT_DIR, "test_meta.json"), "w") as f:
     json.dump(meta, f, indent=2)
 
-# ── 4. Per-period anomaly rates ───────────────────────────────────
+# 4. Per-period anomaly rates
 rows = []
 for mt in MODEL_TYPES:
     preds = all_preds[mt]
@@ -361,7 +362,7 @@ period_df = pd.DataFrame(rows)
 period_df.to_csv(os.path.join(OUTPUT_DIR, "anomaly_rates_by_period.csv"), index=False)
 logger.info("Saved anomaly rates by period.")
 
-# ── 5. Per-day summary ────────────────────────────────────────────
+# 5. Per-day summary
 day_rows = []
 for day_idx, day_name in enumerate(day_names):
     lo = day_boundaries[day_idx]
@@ -385,7 +386,7 @@ day_df = pd.DataFrame(day_rows)
 day_df.to_csv(os.path.join(OUTPUT_DIR, "anomaly_rates_by_day.csv"), index=False)
 logger.info("Saved anomaly rates by day.")
 
-# ── 6. Consensus analysis ─────────────────────────────────────────
+# 6. Consensus analysis
 n_total = min(len(all_preds[mt]) for mt in MODEL_TYPES)
 pred_matrix = np.column_stack([all_preds[mt][:n_total] for mt in MODEL_TYPES])
 n_models_flagged = pred_matrix.sum(axis=1)
@@ -403,7 +404,7 @@ consensus_df = pd.DataFrame(consensus_rows)
 consensus_df.to_csv(os.path.join(OUTPUT_DIR, "consensus_agreement.csv"), index=False)
 logger.info("Saved consensus agreement.")
 
-# ── 7. Root cause analysis (top features per model) ───────────────
+# 7. Root cause analysis (top features per model)
 rca_rows = []
 for mt in MODEL_TYPES:
     scores = all_scores[mt]
@@ -451,7 +452,7 @@ rca_df = pd.DataFrame(rca_rows)
 rca_df.to_csv(os.path.join(OUTPUT_DIR, "root_cause_analysis.csv"), index=False)
 logger.info("Saved root cause analysis.")
 
-# ── Summary ────────────────────────────────────────────────────────
+# Summary
 logger.info("=" * 70)
 logger.info("All results saved to %s", OUTPUT_DIR)
 logger.info("Files:")

@@ -4,160 +4,103 @@ from collections import deque
 class BaseReward:
     """Base class for reward functions in the Snake RL environment."""
 
-    def reset(self):
+    def reset(self, info: dict | None = None):
         pass
 
-    def compute(self, reward, terminated, truncated, info, previous_info, steps):
+    def compute(self, state, action, next_state, raw_reward, terminated, truncated, info):
         raise NotImplementedError
 
 
-# Sparse Reward
+class Identity(BaseReward):
+    def compute(self, state, action, next_state, raw_reward, terminated, truncated, info):
+        return raw_reward
+
+
 class SparseReward(BaseReward):
-    """
-    SparseReward class for computing sparse reward signals in reinforcement learning.
-
-    This reward structure provides minimal feedback to the agent:
-    - Positive reward when food is consumed
-    - Penalty when the agent dies or episode times out
-    - No intermediate rewards for other actions
-
-    Attributes:
-        food_reward (float): Reward value for consuming food. Default is 1.0
-        death_penalty (float): Penalty value for death or timeout. Default is -1.0
-
-    Methods:
-        compute(reward, terminated, truncated, info, previous_info, steps): Calculate the total reward based on game events.
-    """
-
-    def __init__(self, food_reward=1.0, death_penalty=-1.0):
+    def __init__(self, food_reward: float = 1.0, death_penalty: float = -1.0):
         self.food_reward = food_reward
         self.death_penalty = death_penalty
+        self.previous_food = None
 
-    def compute(self, reward, terminated, truncated, info, previous_info, steps):
+    def reset(self, info: dict | None = None):
+        self.previous_food = None if info is None else info.get("food")
+
+    def compute(self, state, action, next_state, raw_reward, terminated, truncated, info):
         total_reward = 0.0
-
         head = info.get("head")
 
-        # --- Food ---
-        food_eaten = False
-        if previous_info is not None:
-            prev_food = previous_info.get("food")
-            if prev_food is not None and head == prev_food:
-                food_eaten = True
-
-        if food_eaten:
+        if self.previous_food is not None and head == self.previous_food:
             total_reward += self.food_reward
 
-        # --- Death ---
         if terminated:
             total_reward += self.death_penalty
 
-        # --- Timeout ---
-        if truncated:
-            total_reward += self.death_penalty
-
+        self.previous_food = info.get("food")
         return total_reward
 
 
-# Dense Reward
 class DenseReward(BaseReward):
-    """
-    DenseReward class for providing dense reward shaping in RL Snake agent.
-
-    This reward structure provides detailed feedback to guide learning:
-    - Positive reward when food is consumed
-    - Penalty when the agent dies or episode times out
-    - Distance-based shaping rewards for moving toward/away from food
-    - Loop detection penalty for repetitive movements
-
-    Attributes:
-        food_reward (float): Reward value for consuming food. Default is 10.0
-        death_penalty (float): Penalty value for death or timeout. Default is -10.0
-        distance_scale (float): Scaling factor for distance-based rewards. Default is 1.0
-        loop_penalty (float): Penalty value for detected loops. Default is -5.0
-        timeout_penalty (float): Penalty value for episode timeouts. Default is -5.0
-        loop_window (int): Size of position history window for loop detection. Default is 20
-        loop_threshold (int): Number of repeated positions before triggering penalty. Default is 4
-
-    Methods:
-        reset(): Clear internal state between episodes.
-        compute(reward, terminated, truncated, info, previous_info, steps): Calculate the total reward based on game events.
-    """
-
     def __init__(
         self,
-        food_reward=10.0,
-        death_penalty=-10.0,
-        distance_scale=1.0,
-        loop_penalty=-8.0,
-        timeout_penalty=-5.0,
-        loop_window=20,
-        loop_threshold=4,
+        food_reward: float = 10.0,
+        death_penalty: float = -10.0,
+        distance_alpha: float = 1.0,
+        loop_penalty: float = -8.0,
+        timeout_penalty: float = -5.0,
+        loop_window: int = 20,
+        loop_threshold: int = 4,
     ):
         self.food_reward = food_reward
         self.death_penalty = death_penalty
-        self.distance_scale = distance_scale
+        self.distance_alpha = distance_alpha
         self.loop_penalty = loop_penalty
         self.timeout_penalty = timeout_penalty
-
         self.loop_threshold = loop_threshold
         self.position_history = deque(maxlen=loop_window)
-
+        self.previous_food = None
         self.previous_distance = None
 
-    def reset(self):
-        self.previous_distance = None
+    def reset(self, info: dict | None = None):
         self.position_history.clear()
+        self.previous_food = None if info is None else info.get("food")
 
-    def compute(self, reward, terminated, truncated, info, previous_info, steps):
+        head = None if info is None else info.get("head")
+        food = None if info is None else info.get("food")
+        if head is not None:
+            self.position_history.append(head)
+        self.previous_distance = self._manhattan_distance(head, food)
+
+    @staticmethod
+    def _manhattan_distance(head, food):
+        if head is None or food is None:
+            return None
+        return abs(head[0] - food[0]) + abs(head[1] - food[1])
+
+    def compute(self, state, action, next_state, raw_reward, terminated, truncated, info):
         total_reward = 0.0
-
         head = info.get("head")
         food = info.get("food")
 
-        # --- Food ---
-        food_eaten = False
-        if previous_info is not None:
-            prev_food = previous_info.get("food")
-            if prev_food is not None and head == prev_food:
-                food_eaten = True
-
+        food_eaten = self.previous_food is not None and head == self.previous_food
         if food_eaten:
             total_reward += self.food_reward
-            self.previous_distance = None  # Reset distance shaping after eating
 
-        # --- Death ---
         if terminated:
             total_reward += self.death_penalty
 
-        # --- Timeout ---
         if truncated:
             total_reward += self.timeout_penalty
 
-        # --- Loop detection ---
-        if head:
+        if head is not None:
             self.position_history.append(head)
             if self.position_history.count(head) >= self.loop_threshold:
                 total_reward += self.loop_penalty
 
-        # --- Distance shaping ---
-        if head and food:
-            current_distance = abs(head[0] - food[0]) + abs(head[1] - food[1])
+        current_distance = self._manhattan_distance(head, food)
+        if self.previous_distance is not None and current_distance is not None and not food_eaten:
+            delta_distance = self.previous_distance - current_distance
+            total_reward += delta_distance * self.distance_alpha
 
-            if self.previous_distance is not None:
-                delta = self.previous_distance - current_distance
-                total_reward += delta * self.distance_scale
-
-            self.previous_distance = current_distance
-
+        self.previous_food = food
+        self.previous_distance = current_distance
         return total_reward
-
-
-# Factory
-def get_reward_function(name: str):
-    if name == "sparse":
-        return SparseReward()
-    elif name == "dense":
-        return DenseReward()
-    else:
-        raise ValueError(f"Unknown reward type: {name}")

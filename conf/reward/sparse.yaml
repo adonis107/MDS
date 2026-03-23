@@ -1,0 +1,3 @@
+_target_: rl_snake.rewards.SparseReward
+food_reward: 1.0
+death_penalty: -1.0

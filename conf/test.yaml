@@ -1,0 +1,28 @@
+defaults:
+  - _self_
+  - agent : random 
+  - encoder : full
+  - reward : id
+  - override hydra/hydra_logging: disabled  
+  - override hydra/job_logging: disabled
+
+env_params:
+  fps : 10
+  max_step: 500
+  init_length: 4
+  food_reward: 2.0
+  # dist_reward: null
+  living_bonus: 0.0
+  death_penalty: -1.0
+  width: 20
+  height: 20
+  block_size: 20
+
+seed: 42
+episode_max_iterations: 50
+
+
+hydra:  
+  output_subdir: null  
+  run:  
+    dir: .

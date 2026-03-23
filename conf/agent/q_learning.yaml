@@ -1,0 +1,16 @@
+_target_ : rl_snake.agents.QLearningAgent
+n_actions: 4
+gamma: 0.99
+epsilon: 1.0
+epsilon_min: 0.05
+epsilon_decay: 0.995
+learning_rate: 0.001
+network_type: mlp
+hidden_dims: [128, 128]
+conv_channels: [16, 32]
+cnn_hidden_dims: [128]
+batch_size: 64
+replay_buffer_size: 10000
+min_replay_size: 1000
+target_update_freq: 100
+seed: null

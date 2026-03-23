@@ -1,0 +1,35 @@
+defaults:
+  - _self_
+  - agent: random
+  - encoder: full
+  - reward: id
+  - override hydra/hydra_logging: disabled  
+  - override hydra/job_logging: disabled
+
+### Env Params ###
+env_params:
+  fps : 10
+  max_step: 1000
+  init_length: 4
+  food_reward: 1.0
+  # dist_reward: null
+  living_bonus: 0.0
+  death_penalty: -1.0
+  width: 20
+  height: 20
+  block_size: 20
+
+episodes: 1000
+seed: null
+wandb: false
+run_name : "test"
+
+save:
+  enabled: false
+  path: agent
+
+
+hydra:
+  output_subdir: null
+  run:
+    dir: .

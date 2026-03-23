@@ -26,6 +26,10 @@ set -euo pipefail
 
 PROJECT_ROOT="$HOME/MDS-PDMM"
 CONDA_ENV="mds_market"
+# Override this at submit time if needed, e.g.:
+# sbatch submit_test_inference_cache.sh /gpfs/scratch/users/$USER/MDS-PDMM-results
+# (Also works with --export=ALL,RESULTS_DIR=... if your Slurm policy allows it.)
+RESULTS_DIR="${1:-${RESULTS_DIR:-$PROJECT_ROOT/results}}"
 
 module purge
 module load miniconda3/25.5.1/none-none
@@ -40,6 +44,7 @@ cd "$PROJECT_ROOT"
 # Train year can be edited directly in test_inference_cache.py (TRAIN_YEAR).
 # Optional CLI override example:
 # python test_inference_cache.py --train-year 2017
-python test_inference_cache.py
+echo "=== Results dir: $RESULTS_DIR ==="
+python test_inference_cache.py --results-dir "$RESULTS_DIR"
 
 echo "=== Inference cache run finished ==="

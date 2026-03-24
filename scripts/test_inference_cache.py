@@ -297,23 +297,6 @@ def savez_compressed_atomic(path: str, **arrays: np.ndarray) -> None:
     tmp_path = f"{path}.tmp"
     try:
         np.savez_compressed(tmp_path, **arrays)
-
-        # On network filesystems (GPFS) a buffered write can appear to
-        # succeed even when the quota is exhausted; the file may vanish
-        # once buffers are flushed.  Sync + existence check catches this.
-        if not os.path.isfile(tmp_path):
-            raise OSError(
-                errno.EDQUOT,
-                "Temp file disappeared after write (likely disk-quota exceeded)",
-                tmp_path,
-            )
-        # Force metadata to disk so os.replace sees the file on GPFS.
-        fd = os.open(tmp_path, os.O_RDONLY)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-
         os.replace(tmp_path, path)
     except OSError as exc:
         if os.path.exists(tmp_path):

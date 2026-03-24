@@ -285,6 +285,10 @@ for model_type in MODEL_TYPES:
                      X_latent.shape[0], NUM_TRAIN_DAYS)
 
     # Save artefacts
+    if model is None:
+        logger.error("%s: no model was built (all training days skipped or no data). Nothing to save.", model_type)
+        continue
+
     trained_models[model_type] = (model, detector)
     trained_scalers[model_type] = scaler
     feature_name_map[model_type] = feature_names

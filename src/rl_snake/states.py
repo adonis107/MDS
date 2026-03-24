@@ -11,7 +11,7 @@ class BaseStateEncoder:
 
 
 class FullGridEncoder(BaseStateEncoder):
-    def __init__(self, width: int = 20, height: int = 20, flatten: bool = True):
+    def __init__(self, width: int = 16, height: int = 16, flatten: bool = True):
         super().__init__()
         self.flatten = flatten
         shape = (height * width * 3,) if flatten else (height, width, 3)

@@ -1,6 +1,8 @@
+import pickle
+
 import hydra
 from hydra.utils import instantiate
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from rl_snake.agents import BaseAgent
 from rl_snake.env import SnakeEnv
@@ -9,9 +11,21 @@ from rl_snake.states import BaseStateEncoder
 
 @hydra.main(version_base=None, config_path="../conf", config_name="evaluate")
 def main(cfg: DictConfig) -> None:
-    env = SnakeEnv(render_mode=cfg.get("render_mode", None), **cfg.env_params)
     agent = BaseAgent.load(cfg.agent_path)
-    encoder: BaseStateEncoder = instantiate(cfg.encoder)
+
+    with open(cfg.agent_path, "rb") as f:
+        checkpoint_payload = pickle.load(f)
+    checkpoint_metadata = OmegaConf.create(checkpoint_payload.get("metadata", {}))
+
+    env_params = cfg.env_params
+    if cfg.use_checkpoint_env and checkpoint_metadata.get("env_params") is not None:
+        env_params = checkpoint_metadata.env_params
+    env = SnakeEnv(render_mode=cfg.get("render_mode", None), **env_params)
+
+    encoder_cfg = cfg.encoder
+    if cfg.use_checkpoint_encoder and checkpoint_metadata.get("encoder") is not None:
+        encoder_cfg = checkpoint_metadata.encoder
+    encoder: BaseStateEncoder = instantiate(encoder_cfg)
 
     food_collected = []
     survival_steps = []

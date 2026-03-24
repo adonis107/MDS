@@ -1,25 +1,27 @@
 defaults:
   - _self_
-  - encoder: full
+  - encoder: features10
   - override hydra/hydra_logging: disabled
   - override hydra/job_logging: disabled
 
 
 env_params:
   fps: 10
-  max_step: 100
+  max_step: 1000
   init_length: 4
-  food_reward: 2.0
+  food_reward: 1.0
   living_bonus: 0.0
   death_penalty: -1.0
-  width: 20
-  height: 20
+  width: 16
+  height: 16
   block_size: 20
 
 agent_path: models/agent.pkl
 episodes: 10
 seed: 42
 render_mode: null
+use_checkpoint_encoder: true
+use_checkpoint_env: true
 
 hydra:
   output_subdir: null

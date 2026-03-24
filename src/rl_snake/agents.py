@@ -21,7 +21,7 @@ class BaseAgent:
     ) -> None:
         raise NotImplementedError
 
-    def save(self, path: str) -> None:
+    def save(self, path: str, metadata: dict | None = None) -> None:
         raise NotImplementedError
 
     @classmethod
@@ -37,7 +37,9 @@ class BaseAgent:
         raise ValueError(f"Unsupported agent type in checkpoint: {agent_type}")
 
     @staticmethod
-    def _write_payload(path: str, payload: dict) -> None:
+    def _write_payload(path: str, payload: dict, metadata: dict | None = None) -> None:
+        if metadata is not None:
+            payload = {**payload, "metadata": metadata}
         output_path = Path(path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, "wb") as f:
@@ -61,8 +63,12 @@ class RandomAgent(BaseAgent):
     ) -> None:
         pass
 
-    def save(self, path: str) -> None:
-        self._write_payload(path, {"agent_type": "random", "n_actions": self.n_actions})
+    def save(self, path: str, metadata: dict | None = None) -> None:
+        self._write_payload(
+            path,
+            {"agent_type": "random", "n_actions": self.n_actions},
+            metadata=metadata,
+        )
 
     @classmethod
     def from_payload(cls, payload: dict) -> "RandomAgent":
@@ -247,7 +253,7 @@ class QLearningAgent(BaseAgent):
         if done:
             self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
 
-    def save(self, path: str) -> None:
+    def save(self, path: str, metadata: dict | None = None) -> None:
         payload = {
             "agent_type": "q_learning",
             "n_actions": self.n_actions,
@@ -272,7 +278,7 @@ class QLearningAgent(BaseAgent):
             if self.target_network is None
             else self.target_network.state_dict(),
         }
-        self._write_payload(path, payload)
+        self._write_payload(path, payload, metadata=metadata)
 
     @classmethod
     def from_payload(cls, payload: dict) -> "QLearningAgent":

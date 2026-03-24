@@ -97,8 +97,7 @@ class SnakeEnv:
             max_length = max(max_length, self._snake_length())
             food_collected = self._food_collected()
 
-        if not done:
-            iteration_limit_reached = True
+        iteration_limit_reached = truncated
 
         return EpisodeStats(
             raw_return=raw_return,

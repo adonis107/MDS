@@ -2,7 +2,7 @@ from pathlib import Path
 
 import hydra
 from hydra.utils import instantiate
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from tqdm.auto import tqdm
 
 import wandb
@@ -68,7 +68,15 @@ def main(cfg: DictConfig) -> None:
 
     if cfg.save.enabled:
         save_path = Path("models") / Path(cfg.save.path).with_suffix(".pkl")
-        agent.save(save_path)
+        agent.save(
+            save_path,
+            metadata={
+                "encoder": OmegaConf.to_container(cfg.encoder, resolve=True),
+                "reward": OmegaConf.to_container(cfg.reward, resolve=True),
+                "env_params": OmegaConf.to_container(cfg.env_params, resolve=True),
+                "seed": cfg.seed,
+            },
+        )
         progress.write(f"Agent saved to {save_path}")
 
     progress.close()

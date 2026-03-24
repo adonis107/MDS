@@ -1,8 +1,8 @@
 defaults:
   - _self_
-  - agent: random
-  - encoder: full
-  - reward: id
+  - agent: q_learning
+  - encoder: features10
+  - reward: dense
   - override hydra/hydra_logging: disabled  
   - override hydra/job_logging: disabled
 
@@ -15,8 +15,8 @@ env_params:
   # dist_reward: null
   living_bonus: 0.0
   death_penalty: -1.0
-  width: 20
-  height: 20
+  width: 16
+  height: 16
   block_size: 20
 
 episodes: 1000

@@ -53,6 +53,7 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 # (data/processed/... and results/<TRAIN_YEAR>/test_output/)
 # Set TRAIN_YEAR in test.py to "2015" or "2017" before submitting.
 cd "$PROJECT_ROOT"
+export PYTHONPATH="$PROJECT_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 python scripts/test.py
 

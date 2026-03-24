@@ -36,6 +36,7 @@ echo "=== PyTorch CUDA: $(python -c 'import torch; print(torch.cuda.is_available
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
 cd "$PROJECT_ROOT"
+export PYTHONPATH="$PROJECT_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 RUN_TAG="sweep_$(date +%Y%m%d_%H%M%S)"
 

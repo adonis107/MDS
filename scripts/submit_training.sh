@@ -56,6 +56,7 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 # It now checkpoints progress per day into results/<TRAIN_YEAR>/resume_state,
 # so rerunning this same script continues automatically after timeout.
 cd "$PROJECT_ROOT"
+export PYTHONPATH="$PROJECT_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 python scripts/train.py
 

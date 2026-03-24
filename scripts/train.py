@@ -55,15 +55,15 @@ logger.info("Device: %s", DEVICE)
 # %%
 # Paths
 DATA_DIR = os.path.join("data", "processed", "TOTF.PA-book")
-TRAIN_YEAR = "2015"  # "2015" or "2017"
+TRAIN_YEAR = "2017"  # "2015" or "2017"
 RESULTS_DIR = os.path.join("results", TRAIN_YEAR)
 RESUME_DIR = os.path.join(RESULTS_DIR, "resume_state")
 os.makedirs(RESULTS_DIR, exist_ok=True)
 os.makedirs(RESUME_DIR, exist_ok=True)
 
 # File listing
-FILES = sorted(glob.glob(os.path.join(DATA_DIR, "*.parquet")))
-NUM_TRAIN_DAYS = len(FILES) - 11  # Last 3 days are held out for testing
+FILES = sorted(glob.glob(os.path.join(DATA_DIR, f"{TRAIN_YEAR}*.parquet")))
+NUM_TRAIN_DAYS = len(FILES) - 12  # Last 3 days are held out for testing
 logger.info("Found %d daily files.  Training on %d days, testing on day %d.", len(FILES), NUM_TRAIN_DAYS, len(FILES))
 
 # %% [markdown]

@@ -292,19 +292,23 @@ def compute_prae_stage(
     }
 
 
-def savez_compressed_atomic(path: str, **arrays: np.ndarray) -> None:
-    """Write a compressed npz atomically to avoid leaving corrupted partial files."""
-    tmp_path = f"{path}.tmp"
+def savez_compressed_safe(path: str, **arrays: np.ndarray) -> None:
+    """Write a compressed npz with a clear error on quota/space failures.
+
+    Day-level atomicity is already handled by the _COMPLETE.json flag,
+    so we write directly to *path* (no temp+rename — GPFS metadata lag
+    makes that unreliable).
+    """
     try:
-        np.savez_compressed(tmp_path, **arrays)
-        os.replace(tmp_path, path)
+        np.savez_compressed(path, **arrays)
     except OSError as exc:
-        if os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
         if exc.errno in (errno.EDQUOT, errno.ENOSPC):
+            # Remove the partially-written file so the day can be retried
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
             raise RuntimeError(
                 "Disk quota / space exceeded while writing cache file "
                 f"{path!r}. Free space or write to a scratch filesystem "
@@ -398,7 +402,7 @@ def main() -> None:
         with open(os.path.join(day_dir, "feature_columns.json"), "w", encoding="utf-8") as f:
             json.dump({"columns": features_day.columns.tolist()}, f, indent=2)
 
-        savez_compressed_atomic(
+        savez_compressed_safe(
             os.path.join(day_dir, "common.npz"),
             period_labels=np.asarray(period_labels_seq, dtype="<U32"),
         )
@@ -428,7 +432,7 @@ def main() -> None:
                     sequences=sequences,
                     batch_size=args.batch_size,
                 )
-                savez_compressed_atomic(
+                savez_compressed_safe(
                     os.path.join(day_dir, "transformer_ocsvm_stage.npz"),
                     latent=stage["latent"],
                     reconstruction_error=stage["reconstruction_error"],
@@ -444,7 +448,7 @@ def main() -> None:
                     batch_size=args.batch_size,
                     gain_cfg=gain_cfg,
                 )
-                savez_compressed_atomic(
+                savez_compressed_safe(
                     os.path.join(day_dir, "pnn_stage.npz"),
                     mu=stage["mu"],
                     sigma=stage["sigma"],
@@ -459,7 +463,7 @@ def main() -> None:
                     sequences=sequences,
                     batch_size=args.batch_size,
                 )
-                savez_compressed_atomic(
+                savez_compressed_safe(
                     os.path.join(day_dir, "prae_stage.npz"),
                     reconstruction_error=stage["reconstruction_error"],
                 )

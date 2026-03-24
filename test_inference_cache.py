@@ -297,6 +297,23 @@ def savez_compressed_atomic(path: str, **arrays: np.ndarray) -> None:
     tmp_path = f"{path}.tmp"
     try:
         np.savez_compressed(tmp_path, **arrays)
+
+        # On network filesystems (GPFS) a buffered write can appear to
+        # succeed even when the quota is exhausted; the file may vanish
+        # once buffers are flushed.  Sync + existence check catches this.
+        if not os.path.isfile(tmp_path):
+            raise OSError(
+                errno.EDQUOT,
+                "Temp file disappeared after write (likely disk-quota exceeded)",
+                tmp_path,
+            )
+        # Force metadata to disk so os.replace sees the file on GPFS.
+        fd = os.open(tmp_path, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
         os.replace(tmp_path, path)
     except OSError as exc:
         if os.path.exists(tmp_path):
@@ -304,11 +321,12 @@ def savez_compressed_atomic(path: str, **arrays: np.ndarray) -> None:
                 os.remove(tmp_path)
             except OSError:
                 pass
-        if exc.errno == errno.EDQUOT:
+        if exc.errno in (errno.EDQUOT, errno.ENOSPC):
             raise RuntimeError(
-                "Disk quota exceeded while writing cache file "
-                f"{path}. Free space/quota or write to another results directory "
-                "(for example a scratch filesystem), then relaunch."
+                "Disk quota / space exceeded while writing cache file "
+                f"{path!r}. Free space or write to a scratch filesystem "
+                "(--results-dir), then relaunch — already-completed days "
+                "will be skipped automatically."
             ) from exc
         raise
 

@@ -3,7 +3,7 @@
 #  Slurm job script — Market Manipulation Testing
 #  Ruche cluster (CentraleSupélec / Paris-Saclay mesocentre)
 #
-#  Submit with:  sbatch submit_testing.sh
+#  Submit with:  sbatch scripts/submit_testing.sh
 # ============================================================
 
 #SBATCH --job-name=mds_testing
@@ -54,6 +54,6 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 # Set TRAIN_YEAR in test.py to "2015" or "2017" before submitting.
 cd "$PROJECT_ROOT"
 
-python test.py
+python scripts/test.py
 
 echo "=== Testing finished ==="

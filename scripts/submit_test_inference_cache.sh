@@ -1,11 +1,11 @@
 #!/bin/bash
 # ============================================================
-#  Slurm job script — Threshold Sweep From Cached Inference
+#  Slurm job script — Test Inference Cache Builder
 #
-#  Submit with: sbatch submit_test_threshold_sweep.sh
+#  Submit with: sbatch scripts/submit_test_inference_cache.sh
 # ============================================================
 
-#SBATCH --job-name=mds_threshold_sweep
+#SBATCH --job-name=mds_test_cache
 #SBATCH --output=%x.o%j
 #SBATCH --error=%x.e%j
 #SBATCH --mail-type=ALL
@@ -14,10 +14,10 @@
 #SBATCH --partition=gpua100
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
-#SBATCH --mem=24G
-#SBATCH --time=08:00:00
+#SBATCH --mem=40G
+#SBATCH --time=12:00:00
 
 #SBATCH --export=NONE
 #SBATCH --propagate=NONE
@@ -37,11 +37,9 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 
 cd "$PROJECT_ROOT"
 
-RUN_TAG="sweep_$(date +%Y%m%d_%H%M%S)"
-
-# Train year can be edited directly in test_threshold_sweep.py (TRAIN_YEAR).
+# Train year can be edited directly in test_inference_cache.py (TRAIN_YEAR).
 # Optional CLI override example:
-# python test_threshold_sweep.py --train-year 2017 --methods pot dspot rfdr --streams all --run-tag "$RUN_TAG"
-python test_threshold_sweep.py --methods pot dspot rfdr --streams all --run-tag "$RUN_TAG"
+# python scripts/test_inference_cache.py --train-year 2017
+python scripts/test_inference_cache.py
 
-echo "=== Threshold sweep finished ==="
+echo "=== Inference cache run finished ==="

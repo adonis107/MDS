@@ -3,7 +3,7 @@
 #  Slurm job script — Market Manipulation Training
 #  Ruche cluster (CentraleSupélec / Paris-Saclay mesocentre)
 #
-#  Submit with:  sbatch submit_training.sh
+#  Submit with:  sbatch scripts/submit_training.sh
 # ============================================================
 
 #SBATCH --job-name=mds_training
@@ -57,6 +57,6 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 # so rerunning this same script continues automatically after timeout.
 cd "$PROJECT_ROOT"
 
-python train.py
+python scripts/train.py
 
 echo "=== Training finished ==="

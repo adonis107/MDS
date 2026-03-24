@@ -22,8 +22,19 @@ A machine learning pipeline for detecting spoofing, layering, and quote stuffing
 ## Project Structure
 
 ```
-├── run.py                  # CLI entry point – runs the full pipeline
-├── preprocess.py           # Raw CSV → cleaned Parquet with engineered features
+├── scripts/
+│   ├── run.py              # CLI entry point – runs the full pipeline
+│   ├── preprocess.py       # Raw CSV → cleaned Parquet with engineered features
+│   ├── train.py            # Day-by-day training loop (Slurm)
+│   ├── test.py             # Evaluation on held-out data (Slurm)
+│   ├── test_inference_cache.py   # Cache model outputs per day
+│   ├── test_threshold_sweep.py   # Threshold sweep from cache
+│   ├── submit_training.sh        # Slurm job scripts
+│   ├── submit_testing.sh
+│   ├── submit_test_inference_cache.sh
+│   ├── submit_test_threshold_sweep.sh
+│   ├── queue_resume_chain.sh     # Chain dependent Slurm jobs
+│   └── setup_env.sh              # Conda environment setup
 ├── config/
 │   └── default.yaml        # All pipeline hyperparameters
 ├── detection/
@@ -65,7 +76,7 @@ pip install -r requirements.txt
 Place raw daily LOB CSV files under `data/raw/TOTF.PA-book/`, then run the preprocessing script:
 
 ```bash
-python preprocess.py
+python scripts/preprocess.py
 ```
 
 This produces cleaned Parquet files in `data/processed/TOTF.PA-book/` with all engineered features.
@@ -74,16 +85,16 @@ This produces cleaned Parquet files in `data/processed/TOTF.PA-book/` with all e
 
 ```bash
 # Run with default configuration
-python run.py
+python scripts/run.py
 
 # Use a custom config
-python run.py -c config/default.yaml
+python scripts/run.py -c config/default.yaml
 
 # Override model type and training epochs
-python run.py --model pnn --epochs 100
+python scripts/run.py --model pnn --epochs 100
 
 # Change device and threshold method
-python run.py --device cpu --threshold dspot
+python scripts/run.py --device cpu --threshold dspot
 ```
 
 All pipeline settings (data paths, feature sets, model architecture, training, thresholding, evaluation) are controlled via [config/default.yaml](config/default.yaml) and can be overridden from the CLI.

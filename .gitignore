@@ -11,6 +11,7 @@
 # Folders
 files/
 archive/
+results/
 __pycache__/
 .venv/
 test_output/

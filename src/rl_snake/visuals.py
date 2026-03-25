@@ -84,20 +84,33 @@ def make_animation(
     env,
     agent,
     get_state,
+    n_frames: int = 1,
     max_frames: int | None = None,
     interval: int = 150,
     title: str = "Snake",
     legend: bool = True,
 ) -> FuncAnimation:
-    """Generate a Matplotlib animation for one rollout."""
-    observations = [env.reset()]
+    """Generate a Matplotlib animation for one rollout.
+
+    Args:
+        n_frames: Number of frames to stack for the agent input (must match
+                  how the agent was trained). The rendered video always shows
+                  the raw single-frame grid regardless of this value.
+    """
+    from rl_snake.agent import FrameStack
+
+    frame_stack = FrameStack(n_frames, get_state)
+
+    first_obs = env.reset()
+    observations = [first_obs]
+    state = frame_stack.reset(env)
     done = False
 
     while not done and (max_frames is None or len(observations) < max_frames):
-        state = get_state(env)
         action = agent.select_action(state)
         result = env.step(action)
         observations.append(result.observation)
+        state = frame_stack.step(env)
         done = result.done
 
     bordered_frames = [_add_border(obs) for obs in observations]
@@ -130,3 +143,47 @@ def make_animation(
         repeat=False,
     )
     return animation
+
+
+def save_video(
+    path: str,
+    env,
+    agent,
+    get_state,
+    n_frames: int = 1,
+    fps: int = 8,
+    max_frames: int = 400,
+    title: str = "Snake",
+) -> None:
+    """Save a rollout video to disk.
+
+    Supports .gif (Pillow) and .mp4 (ffmpeg). Falls back to GIF if the path
+    extension is not recognised.
+
+    Args:
+        path:       Output file path (.gif or .mp4).
+        env:        A SnakeEnv instance (will be reset internally).
+        agent:      A trained agent with a select_action(state) method.
+        get_state:  Base state-extraction function (get_state or get_grid_state).
+        n_frames:   Frame-stack depth used during training.
+        fps:        Frames per second.
+        max_frames: Maximum number of game steps to record.
+        title:      Title shown on the animation.
+    """
+    anim = make_animation(
+        env,
+        agent,
+        get_state,
+        n_frames=n_frames,
+        max_frames=max_frames,
+        interval=1000 // fps,
+        title=title,
+        legend=True,
+    )
+    try:
+        if path.endswith(".mp4"):
+            anim.save(path, writer="ffmpeg", fps=fps)
+        else:
+            anim.save(path, writer="pillow", fps=fps)
+    finally:
+        plt.close("all")

@@ -1,0 +1,10 @@
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from /raid/home/students/fotis/.netrc.
+wandb: Currently logged in as: fotiskapotos to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run bvp3fn6p
+wandb: Tracking run with wandb version 0.25.1
+wandb: Run data is saved locally in /raid/home/students/fotis/MVA/MDS-RL_Snake_Agent/wandb/run-20260325_100208-bvp3fn6p
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run simple_cnn
+wandb: ⭐️ View project at https://wandb.ai/fotiskapotos/rl-snake
+wandb: 🚀 View run at https://wandb.ai/fotiskapotos/rl-snake/runs/bvp3fn6p
+wandb: WARNING Symlinked 1 file into the W&B run directory; call wandb.save again to sync new files.

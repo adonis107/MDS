@@ -30,21 +30,45 @@ def _is_dangerous(env: SnakeEnv, pos: tuple[int, int]) -> bool:
     return pos in env.snake[:-1]
 
 
+def _nearest_food_of_type(
+    env: SnakeEnv, food_types: tuple[str, ...]
+) -> tuple[int, int] | None:
+    """Return the position of the nearest food matching any of the given types."""
+    hr, hc = env.snake[0]
+    best_pos = None
+    best_dist = float("inf")
+    for pos, ftype in env.foods.items():
+        if ftype in food_types:
+            d = abs(pos[0] - hr) + abs(pos[1] - hc)
+            if d < best_dist:
+                best_dist = d
+                best_pos = pos
+    return best_pos
+
+
 def get_state(env: SnakeEnv) -> np.ndarray:
-    """Return the 11-feature state vector.
+    """Return the 15-feature state vector.
 
     Features (all binary floats):
-        [0]  danger straight ahead
-        [1]  danger to the right (relative turn)
-        [2]  danger to the left  (relative turn)
-        [3]  moving up
-        [4]  moving right
-        [5]  moving down
-        [6]  moving left
-        [7]  food is above head
-        [8]  food is below head
-        [9]  food is left  of head
-        [10] food is right of head
+        [0]   danger straight ahead
+        [1]   danger to the right (relative turn)
+        [2]   danger to the left  (relative turn)
+        [3]   moving up
+        [4]   moving right
+        [5]   moving down
+        [6]   moving left
+        [7]   nearest positive food (gold or silver) is above head
+        [8]   nearest positive food is below head
+        [9]   nearest positive food is left of head
+        [10]  nearest positive food is right of head
+        [11]  nearest poison is above head
+        [12]  nearest poison is below head
+        [13]  nearest poison is left of head
+        [14]  nearest poison is right of head
+
+    Backward compat: with n_silver=0 and n_poison=0, features [7-10] point to
+    gold food (same as before) and features [11-14] are always 0. The network
+    learns to ignore them, so the simple game still works.
     """
     hr, hc = env.snake[0]
     d = env.direction
@@ -54,10 +78,17 @@ def get_state(env: SnakeEnv) -> np.ndarray:
         return (hr + dr, hc + dc)
 
     danger_straight = float(_is_dangerous(env, ahead(d)))
-    danger_right = float(_is_dangerous(env, ahead(_TURN_RIGHT[d])))
-    danger_left = float(_is_dangerous(env, ahead(_TURN_LEFT[d])))
+    danger_right    = float(_is_dangerous(env, ahead(_TURN_RIGHT[d])))
+    danger_left     = float(_is_dangerous(env, ahead(_TURN_LEFT[d])))
 
-    fr, fc = env.food or (hr, hc)
+    # Nearest positive food (gold or silver) — falls back to head if none exists
+    pos_food = _nearest_food_of_type(env, ("gold", "silver")) or (hr, hc)
+    fr, fc = pos_food
+
+    # Nearest poison — direction features are zeroed when there is no poison
+    poison_pos = _nearest_food_of_type(env, ("poison",))
+    has_poison = poison_pos is not None
+    pr, pc = poison_pos if has_poison else (hr, hc)
 
     return np.array(
         [
@@ -68,10 +99,14 @@ def get_state(env: SnakeEnv) -> np.ndarray:
             float(d == RIGHT),
             float(d == DOWN),
             float(d == LEFT),
-            float(fr < hr),
-            float(fr > hr),
-            float(fc < hc),
-            float(fc > hc),
+            float(fr < hr),                      # positive food above
+            float(fr > hr),                      # positive food below
+            float(fc < hc),                      # positive food left
+            float(fc > hc),                      # positive food right
+            float(has_poison and pr < hr),        # poison above
+            float(has_poison and pr > hr),        # poison below
+            float(has_poison and pc < hc),        # poison left
+            float(has_poison and pc > hc),        # poison right
         ],
         dtype=np.float32,
     )
@@ -97,6 +132,45 @@ def get_grid_state(env: SnakeEnv) -> np.ndarray:
     grid[4] = obs == 5  # poison food
     grid[5] = obs == 6  # obstacle
     return grid
+
+
+# ---------------------------------------------------------------------------
+# Frame stacking
+# ---------------------------------------------------------------------------
+
+
+class FrameStack:
+    """Stacks the last n_frames observations into a single state array.
+
+    For the CNN agent: (6, H, W) per frame → (6*n_frames, H, W) stacked.
+    For the MLP agent: (15,) per frame     → (15*n_frames,) concatenated.
+
+    With n_frames=1 (default) the output is identical to a single frame,
+    so all existing code paths are unaffected.
+    """
+
+    def __init__(self, n_frames: int, state_fn) -> None:
+        self.n_frames = n_frames
+        self.state_fn = state_fn
+        self._frames: deque = deque(maxlen=n_frames)
+
+    def reset(self, env: SnakeEnv) -> np.ndarray:
+        """Call at the start of every episode to fill the buffer with the first frame."""
+        obs = self.state_fn(env)
+        self._frames.clear()
+        for _ in range(self.n_frames):
+            self._frames.append(obs)
+        return self._stacked()
+
+    def step(self, env: SnakeEnv) -> np.ndarray:
+        """Call after every env.step() to push the new frame and return the stack."""
+        self._frames.append(self.state_fn(env))
+        return self._stacked()
+
+    def _stacked(self) -> np.ndarray:
+        if self.n_frames == 1:
+            return self._frames[0]
+        return np.concatenate(list(self._frames), axis=0)
 
 
 # ---------------------------------------------------------------------------
@@ -168,52 +242,89 @@ class BaseAgent(ABC):
 
 
 class _QNetwork(nn.Module):
-    def __init__(self, state_dim: int, n_actions: int, hidden: tuple[int, ...] = (256, 128)) -> None:
+    """MLP Q-network with optional dueling architecture."""
+
+    def __init__(
+        self,
+        state_dim: int,
+        n_actions: int,
+        hidden: tuple[int, ...] = (256, 128),
+        dueling: bool = False,
+    ) -> None:
         super().__init__()
+        self.dueling = dueling
+
         layers: list[nn.Module] = []
         in_dim = state_dim
         for h in hidden:
             layers += [nn.Linear(in_dim, h), nn.ReLU()]
             in_dim = h
-        layers.append(nn.Linear(in_dim, n_actions))
-        self.net = nn.Sequential(*layers)
+        self.trunk = nn.Sequential(*layers)
+
+        if dueling:
+            self.value_head = nn.Linear(in_dim, 1)
+            self.adv_head   = nn.Linear(in_dim, n_actions)
+        else:
+            self.out = nn.Linear(in_dim, n_actions)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
+        x = self.trunk(x)
+        if self.dueling:
+            v = self.value_head(x)               # (B, 1)
+            a = self.adv_head(x)                 # (B, n_actions)
+            return v + a - a.mean(dim=1, keepdim=True)
+        return self.out(x)
 
 
 class _CNNQNetwork(nn.Module):
-    """CNN Q-network that operates on the full grid observation (4-channel binary image)."""
+    """CNN Q-network with optional dueling architecture.
+
+    Operates on a stacked grid observation of shape (in_channels, H, W).
+    With n_frames=1: in_channels=6. With n_frames=4: in_channels=24.
+    """
 
     def __init__(
         self,
         height: int,
         width: int,
         n_actions: int,
+        in_channels: int = 6,
         conv_channels: tuple[int, ...] = (32, 64),
         hidden: tuple[int, ...] = (512,),
+        dueling: bool = False,
     ) -> None:
         super().__init__()
+        self.dueling = dueling
+
         conv_layers: list[nn.Module] = []
-        in_ch = 6  # body, head, gold, silver, poison, obstacle
+        in_ch = in_channels
         for ch in conv_channels:
             conv_layers += [nn.Conv2d(in_ch, ch, kernel_size=3, padding=1), nn.ReLU()]
             in_ch = ch
         self.conv = nn.Sequential(*conv_layers)
 
-        fc_in = in_ch * height * width
         fc_layers: list[nn.Module] = []
-        in_dim = fc_in
+        in_dim = in_ch * height * width
         for h in hidden:
             fc_layers += [nn.Linear(in_dim, h), nn.ReLU()]
             in_dim = h
-        fc_layers.append(nn.Linear(in_dim, n_actions))
-        self.fc = nn.Sequential(*fc_layers)
+        self.fc_trunk = nn.Sequential(*fc_layers)
+
+        if dueling:
+            self.value_head = nn.Linear(in_dim, 1)
+            self.adv_head   = nn.Linear(in_dim, n_actions)
+        else:
+            self.out = nn.Linear(in_dim, n_actions)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.conv(x)
         x = x.flatten(1)
-        return self.fc(x)
+        x = self.fc_trunk(x)
+        if self.dueling:
+            v = self.value_head(x)
+            a = self.adv_head(x)
+            return v + a - a.mean(dim=1, keepdim=True)
+        return self.out(x)
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +355,9 @@ class _BaseDQNAgent(BaseAgent):
         target_update_freq: int,
         optimizer_name: str,
         device: torch.device,
+        double_dqn: bool = False,
+        grad_clip: float | None = 10.0,
+        target_tau: float | None = None,
     ) -> None:
         self.gamma = gamma
         self.epsilon = epsilon_start
@@ -252,6 +366,11 @@ class _BaseDQNAgent(BaseAgent):
         self.batch_size = batch_size
         self.target_update_freq = target_update_freq
         self.device = device
+        self.double_dqn = double_dqn
+        self.grad_clip = grad_clip
+        # target_tau: None = hard update every target_update_freq steps
+        #             >0   = soft Polyak update every step (e.g. 0.005)
+        self.target_tau = target_tau
 
         self.q_net = q_net
         self.target_net = copy.deepcopy(q_net)
@@ -289,27 +408,42 @@ class _BaseDQNAgent(BaseAgent):
 
         states, actions, rewards, next_states, dones = self.buffer.sample(self.batch_size)
 
-        s = torch.tensor(states, device=self.device)
-        a = torch.tensor(actions, device=self.device)
-        r = torch.tensor(rewards, device=self.device)
+        s  = torch.tensor(states,      device=self.device)
+        a  = torch.tensor(actions,     device=self.device)
+        r  = torch.tensor(rewards,     device=self.device)
         s_ = torch.tensor(next_states, device=self.device)
-        d = torch.tensor(dones, device=self.device)
+        d  = torch.tensor(dones,       device=self.device)
 
         q_values = self.q_net(s).gather(1, a.unsqueeze(1)).squeeze(1)
 
         with torch.no_grad():
-            max_next_q = self.target_net(s_).max(dim=1).values
+            if self.double_dqn:
+                # Online net selects the action, target net evaluates it
+                best_actions = self.q_net(s_).argmax(dim=1)
+                max_next_q = self.target_net(s_).gather(1, best_actions.unsqueeze(1)).squeeze(1)
+            else:
+                max_next_q = self.target_net(s_).max(dim=1).values
             targets = r + self.gamma * max_next_q * (1.0 - d)
 
-        loss = nn.functional.mse_loss(q_values, targets)
+        # Huber loss is less sensitive to outlier Q-value targets than MSE
+        loss = nn.functional.smooth_l1_loss(q_values, targets)
         self.optimizer.zero_grad()
         loss.backward()
+        if self.grad_clip is not None:
+            nn.utils.clip_grad_norm_(self.q_net.parameters(), self.grad_clip)
         self.optimizer.step()
 
         self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
 
         self._steps += 1
-        if self._steps % self.target_update_freq == 0:
+        if self.target_tau is not None:
+            # Soft (Polyak) update every step: θ_target ← τ·θ_online + (1-τ)·θ_target
+            for p_online, p_target in zip(self.q_net.parameters(), self.target_net.parameters(), strict=True):
+                p_target.data.copy_(
+                    self.target_tau * p_online.data + (1.0 - self.target_tau) * p_target.data,
+                )
+        elif self._steps % self.target_update_freq == 0:
+            # Hard update
             self.target_net.load_state_dict(self.q_net.state_dict())
 
         return loss.item()
@@ -341,9 +475,17 @@ class _BaseDQNAgent(BaseAgent):
 
 
 class DQNAgent(_BaseDQNAgent):
-    """DQN agent with a fully-connected MLP operating on the 11-feature state vector."""
+    """DQN agent with a fully-connected MLP on the 15-feature state vector.
 
-    STATE_DIM = 11
+    With n_frames=1 (default): input dim = 15.
+    With n_frames=N:           input dim = 15 * N (last N feature vectors stacked).
+
+    Backward compat: on the simple env (no silver/poison/obstacles) features
+    [11-14] are always 0, so the agent behaves identically to the old 11-feature
+    version (the extra zeros are ignored by the network).
+    """
+
+    BASE_STATE_DIM = 15
 
     def __init__(
         self,
@@ -358,9 +500,15 @@ class DQNAgent(_BaseDQNAgent):
         hidden: tuple[int, ...] = (256, 128),
         optimizer_name: str = "adam",
         device: str | None = None,
+        n_frames: int = 1,
+        double_dqn: bool = False,
+        dueling: bool = False,
+        grad_clip: float | None = 10.0,
+        target_tau: float | None = None,
     ) -> None:
         dev = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
-        q_net = _QNetwork(self.STATE_DIM, self.N_ACTIONS, hidden).to(dev)
+        state_dim = self.BASE_STATE_DIM * n_frames
+        q_net = _QNetwork(state_dim, self.N_ACTIONS, hidden, dueling=dueling).to(dev)
         super().__init__(
             q_net=q_net,
             lr=lr,
@@ -373,11 +521,20 @@ class DQNAgent(_BaseDQNAgent):
             target_update_freq=target_update_freq,
             optimizer_name=optimizer_name,
             device=dev,
+            double_dqn=double_dqn,
+            grad_clip=grad_clip,
+            target_tau=target_tau,
         )
 
 
 class CNNDQNAgent(_BaseDQNAgent):
-    """DQN agent with a CNN operating on the full 4-channel grid observation."""
+    """DQN agent with a CNN on the stacked grid observation.
+
+    With n_frames=1 (default): input channels = 6.
+    With n_frames=N:           input channels = 6 * N.
+    """
+
+    BASE_CHANNELS = 6
 
     def __init__(
         self,
@@ -395,9 +552,17 @@ class CNNDQNAgent(_BaseDQNAgent):
         hidden: tuple[int, ...] = (512,),
         optimizer_name: str = "adam",
         device: str | None = None,
+        n_frames: int = 1,
+        double_dqn: bool = False,
+        dueling: bool = False,
+        grad_clip: float | None = 10.0,
+        target_tau: float | None = None,
     ) -> None:
         dev = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
-        q_net = _CNNQNetwork(height, width, self.N_ACTIONS, conv_channels, hidden).to(dev)
+        in_channels = self.BASE_CHANNELS * n_frames
+        q_net = _CNNQNetwork(
+            height, width, self.N_ACTIONS, in_channels, conv_channels, hidden, dueling=dueling
+        ).to(dev)
         super().__init__(
             q_net=q_net,
             lr=lr,
@@ -410,4 +575,7 @@ class CNNDQNAgent(_BaseDQNAgent):
             target_update_freq=target_update_freq,
             optimizer_name=optimizer_name,
             device=dev,
+            double_dqn=double_dqn,
+            grad_clip=grad_clip,
+            target_tau=target_tau,
         )

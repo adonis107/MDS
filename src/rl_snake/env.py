@@ -351,8 +351,7 @@ class SnakeEnv:
                 new_cells = [(r + dr, c + dc + i) for i in range(3)]
 
             out_of_bounds = any(
-                nr < 0 or nr >= self.height or nc < 0 or nc >= self.width
-                for nr, nc in new_cells
+                nr < 0 or nr >= self.height or nc < 0 or nc >= self.width for nr, nc in new_cells
             )
 
             if out_of_bounds:

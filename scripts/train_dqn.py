@@ -15,11 +15,15 @@ from rl_snake.env import SnakeEnv
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Train DQN on Snake")
 
-    # Environment
+    # Environment — grid
     p.add_argument("--height", type=int, default=10)
     p.add_argument("--width", type=int, default=10)
     p.add_argument("--max-steps", type=int, default=500)
-    p.add_argument("--food-reward", type=float, default=10.0)
+
+    # Environment — rewards
+    p.add_argument("--gold-reward", type=float, default=10.0)
+    p.add_argument("--silver-reward", type=float, default=5.0)
+    p.add_argument("--poison-reward", type=float, default=0.0)
     p.add_argument("--death-reward", type=float, default=-10.0)
     p.add_argument("--step-reward", type=float, default=0)
     p.add_argument(
@@ -28,6 +32,15 @@ def parse_args() -> argparse.Namespace:
         default=0.0,
         help="Scale for potential-based Manhattan distance reward shaping (0 = disabled)",
     )
+
+    # Environment — food
+    p.add_argument("--n-gold", type=int, default=1)
+    p.add_argument("--n-silver", type=int, default=0)
+    p.add_argument("--n-poison", type=int, default=0)
+    p.add_argument("--poison-shrink", type=int, default=2, help="Body segments removed when poison is eaten")
+
+    # Environment — obstacles
+    p.add_argument("--n-dynamic-obstacles", type=int, default=0, help="Number of moving wall segments (size 3)")
 
     # Agent
     p.add_argument("--lr", type=float, default=1e-3)
@@ -80,11 +93,18 @@ def train(args: argparse.Namespace) -> None:
         height=args.height,
         width=args.width,
         seed=args.seed,
-        food_reward=args.food_reward,
+        gold_reward=args.gold_reward,
+        silver_reward=args.silver_reward,
+        poison_reward=args.poison_reward,
         death_reward=args.death_reward,
         step_reward=args.step_reward,
         distance_reward_scale=args.distance_reward_scale,
         max_steps=args.max_steps,
+        n_gold=args.n_gold,
+        n_silver=args.n_silver,
+        n_poison=args.n_poison,
+        poison_shrink=args.poison_shrink,
+        n_dynamic_obstacles=args.n_dynamic_obstacles,
     )
 
     if args.agent_type == "cnn":

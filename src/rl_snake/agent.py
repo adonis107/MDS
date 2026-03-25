@@ -24,7 +24,7 @@ def _is_dangerous(env: SnakeEnv, pos: tuple[int, int]) -> bool:
     r, c = pos
     if r < 0 or r >= env.height or c < 0 or c >= env.width:
         return True
-    if pos in env.obstacles:
+    if pos in env.all_obstacle_positions:
         return True
     # tail will move away this step, so exclude it
     return pos in env.snake[:-1]
@@ -78,20 +78,24 @@ def get_state(env: SnakeEnv) -> np.ndarray:
 
 
 def get_grid_state(env: SnakeEnv) -> np.ndarray:
-    """Return the full grid as a 4-channel binary float array (C, H, W).
+    """Return the full grid as a 6-channel binary float array (C, H, W).
 
     Channels:
         0 = snake body
         1 = snake head
-        2 = food
-        3 = obstacles
+        2 = gold food
+        3 = silver food
+        4 = poison food
+        5 = obstacle (static or dynamic)
     """
-    obs = env._get_observation()  # (H, W) with values 0-4
-    grid = np.zeros((4, env.height, env.width), dtype=np.float32)
+    obs = env._get_observation()  # (H, W) with values 0-6
+    grid = np.zeros((6, env.height, env.width), dtype=np.float32)
     grid[0] = obs == 1  # body
     grid[1] = obs == 2  # head
-    grid[2] = obs == 3  # food
-    grid[3] = obs == 4  # obstacle
+    grid[2] = obs == 3  # gold food
+    grid[3] = obs == 4  # silver food
+    grid[4] = obs == 5  # poison food
+    grid[5] = obs == 6  # obstacle
     return grid
 
 
@@ -191,7 +195,7 @@ class _CNNQNetwork(nn.Module):
     ) -> None:
         super().__init__()
         conv_layers: list[nn.Module] = []
-        in_ch = 4  # body, head, food, obstacle
+        in_ch = 6  # body, head, gold, silver, poison, obstacle
         for ch in conv_channels:
             conv_layers += [nn.Conv2d(in_ch, ch, kernel_size=3, padding=1), nn.ReLU()]
             in_ch = ch

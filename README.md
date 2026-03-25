@@ -1,7 +1,5 @@
 # Probabilistic Detection of Market Manipulation
 
-> Learning the Spoofability of Limit Order Books With Interpretable Probabilistic Neural Networks
-
 A machine learning pipeline for detecting spoofing, layering, and quote stuffing in Limit Order Book (LOB) data using probabilistic and interpretable deep learning models, backed by Extreme Value Theory for adaptive thresholding. Developed by Adonis Jamal and Jean-Vincent Martini for the *Mathematics and Data Science* major at CentraleSupélec under the supervision of Professor Damien Challet.
 
 ## Key Features

@@ -9,23 +9,13 @@
 \definecolor{primary}{RGB}{160,32,60}
 
 % Packages
-\usepackage{booktabs}
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
 \usepackage{tikz}
-\usetikzlibrary{shapes, arrows.meta, positioning, calc, fit}
 \usepackage{multicol}
-\usepackage{url}
 \usepackage{xcolor}
-\definecolor{progreen}{RGB}{34,139,34}
-\definecolor{conred}{RGB}{200,30,30}
-\newcommand{\pro}{\textcolor{progreen}{\textbf{+}}}
-\newcommand{\con}{\textcolor{conred}{\textbf{--}}}
-
-% Compact list spacing
 \usepackage{enumitem}
-\setlist[itemize]{leftmargin=1.5em, itemsep=0.1em, parsep=0pt, topsep=0.1em}
-
+\setlist[itemize]{leftmargin=1.5em, itemsep=0.35em, parsep=0pt, topsep=0.2em}
 \setlength{\columnsep}{2cm}
 \usepackage[backend=bibtex, style=numeric, sorting=none, maxnames=2, minnames=1]{biblatex}
 \AtBeginBibliography{
@@ -35,191 +25,138 @@
 }
 \addbibresource{bibliography.bib}
 
-% Title, authors, date
-\title[Reinforcement Learning -- CentraleSup\'elec]{Comparative Study of Deep Reinforcement Learning Methods on the Game of Snake}
+% ── Figure placeholder ────────────────────────────────────────────────────────
+% \figplaceholder[height]{label}
+\newcommand{\figplaceholder}[2][5.5cm]{%
+  \begin{center}
+    \colorbox{gray!12}{%
+      \parbox[c][#1][c]{0.92\linewidth}{%
+        \centering\color{gray!55}\large\itshape #2%
+      }%
+    }
+  \end{center}
+}
+
+% ── Title block ───────────────────────────────────────────────────────────────
+\title[Reinforcement Learning -- CentraleSup\'elec]{%
+  Snake in all its forms}
 \author{Fotios Kapotos, Adonis Jamal, Jean-Vincent Martini}
 \institute[CentraleSup\'elec]{CentraleSup\'elec}
-\date{\today}
+\date{March 2026}
 
-% ==============================================================================
+% =============================================================================
 \begin{document}
 \begin{frame}[t]
 \vskip0.1cm
 \begin{multicols}{2}
 
-%% ---- COLUMN 1 ----
+% ── Block 1 : The Snake Game ──────────────────────────────────────────────────
+\begin{block}{1.\enspace The Snake Game}
 
-%% INTRODUCTION & PROBLEM DEFINITION
-\begin{block}{1. Introduction \& Problem Definition}
-
-\textbf{Context.}
-Reinforcement Learning (RL) has achieved remarkable success in sequential decision-making, from Atari games~\cite{mnih2015human} to Go~\cite{silver2016mastering} and robotics~\cite{singh2022reinforcement}. The \textbf{Snake game} offers a compelling yet underexplored benchmark: its rules are simple, but the strategic requirements are complex.
-
-\smallskip
-\textbf{Challenges.}
-\begin{itemize} 
-  \item The agent must balance \textbf{immediate rewards} (food collection) with \textbf{long-term survival} (avoiding self-collision).
-  \item \textbf{As the snake grows, the state space complexity increases} and navigation becomes progressively constrained.
-  \item Greedy strategies inevitably fail: \textbf{the agent must plan long trajectories} to avoid trapping itself.
-  \item These dynamics mirror real-world problems where available actions diminish over time.
-\end{itemize}
-
-\smallskip
-\textbf{State of the Art.} 
-Focus on Deep Q-Networks (DQN) with convolutional neural networks~\cite{wei2018autonomous}, differing in their state representations (raw pixels versus sensor-based inputs~\cite{sebastianelli2021deep}, reward shaping strategies~\cite{almalki2019exploration}, and memory efficiency~\cite{tushar2022memory}) with some works also comparing alternative algorithms such as SARSA and PPO~\cite{bonnici2021exploring}.
-
-\bigskip
-
-\begin{figure}
-\centering
-\includegraphics[width=0.4\linewidth]{img/screen_snake.png}
-\caption{Snapshot of the Snake environment. The agent (white with grey head) must navigate to collect food (green) while avoiding collisions with itself and walls.}
-
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.5\linewidth]{img/map_simple.png}
+    \caption{Example figure}
+    \label{fig:example}
 \end{figure}
+
+\begin{itemize}
+  \item Agent controls a snake on a $16\!\times\!16$ grid; eats food to grow longer
+  \item Dies on wall or self-collision; objective: Maximise snake lenght
+  \item \textbf{MLP agent:} 15-dim hand-crafted input --- danger flags, direction bits, food/poison bearings
+  \item \textbf{CNN agent:} 6-channel raw grid (body, head, gold, silver, poison, obstacles); learns spatial patterns directly
+  \item Both trained with DQN; action space: 4 absolute directions
+\end{itemize}
 
 \end{block}
 
-%% OBJECTIVES & CONTRIBUTIONS
-\begin{alertblock}{2. Objective \& Main Contributions}
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=1\linewidth]{img/train_simple.png}
+    \caption{Comparaison between CNN and MLP Networks}
+    \label{fig:example}
+\end{figure}
 
-\textbf{Objective.} Conduct a systematic empirical comparison of modern deep RL algorithms on the Snake environment, \textbf{investigating how algorithmic choices, reward shaping strategies, and state representations affect learning efficiency and final performance}.
+% ── Block 2 : The Long Snake Problem ─────────────────────────────────────────
+\begin{block}{2.\enspace The Long Snake Problem}
 
-\smallskip
-\textbf{Main Contributions.}
+\figplaceholder[6cm]{Figure: snake trapping itself in a corridor, food locked inside}
+
 \begin{itemize}
-  \item A \textbf{comparative analysis} of value-based (DQN, Double DQN) and policy-based (A2C, PPO) methods on a growing-horizon task.
-  \item An in-depth study of \textbf{reward shaping} (sparse vs.\ dense) in an environment with naturally delayed consequences.
-  \item A comparison of \textbf{multiple state representations}: full grid, egocentric view, and hand-crafted features.
-  \item Two neural network policies: a standard \textbf{MLP} and a custom \textbf{CNN} preserving spatial structure.
+  \item More body segments $\Rightarrow$ more constraints, less free space to manoeuvre
+  \item Greedy food-chasing closes off the snake's own escape routes
+  \item Reward becomes sparse: death rare at length~3, near-certain at length~20+
+  \item Agent must plan \textbf{many steps ahead} to keep passages open
+  \item \textbf{Dense reward shaping:} $+\Delta d$ potential toward food each step
+  \item \textbf{Loop penalty} ($-8$): penalises revisiting the same cell $\geq\!4\!\times$ in a 20-step window
+  \item \textbf{Curriculum:} initial length $3\!\to\!7\!\to\!15$ before switching to hard env
+\end{itemize}
+
+\end{block}
+
+
+\columnbreak
+
+
+% ── Block 3 : Hard Mode Environment ──────────────────────────────────────────
+\begin{block}{3.\enspace Hard Mode: Dynamic Environment}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.5\linewidth]{img/map_hard.png}
+    \caption{Example figure}
+    \label{fig:example}
+\end{figure}
+
+\begin{itemize}
+  \item \textbf{Gold food} ($+5$): primary target; respawns immediately after eating
+  \item \textbf{Silver food} ($+0.5$): secondary target; worth pursuing when gold is far
+  \item \textbf{Poison food}: shrinks snake by 2 segments; must be actively avoided
+  \item \textbf{Static obstacles}: fixed 3-cell walls placed at episode reset; lethal on contact
+  \item \textbf{Dynamic obstacles}: 3-cell walls bouncing back and forth within a fixed range; lethal even if the wall \emph{moves into} a stationary snake
+  \item A single frame cannot reveal obstacle direction --- temporal context is essential
+\end{itemize}
+
+\end{block}
+
+
+% ── Block 4 : Strategies ──────────────────────────────────────────────────────
+\begin{alertblock}{4.\enspace Strategies for the Hard Environment}
+
+\figplaceholder[6cm]{Figure: frame stacking ($t{-}3$ to $t$, obstacle drifting) fed into CNN; dueling DQN split ($V$ and $A$ heads)}
+
+\begin{itemize}
+  \item \textbf{Frame stacking ($n\!=\!4$):} encodes obstacle velocity; converts partial observability into an approximately Markovian state
+  \item \textbf{Dueling DQN:} shared trunk splits into $V(s)$ and $A(s,a)$ heads; $Q = V + A - \bar{A}$; faster convergence when action choice is irrelevant
+  \item \textbf{Double DQN:} decouples action selection from target evaluation; reduces Q-value overestimation
+  \item \textbf{$n$-step returns ($n\!=\!3$):} $G_t = \sum_{k=0}^{2}\gamma^k r_{t+k}$; propagates credit further back in time
+  \item \textbf{Soft target update ($\tau\!=\!0.005$):} Polyak averaging of target weights; smoother training
+  \item \textbf{Distance shaping:} potential-based reward toward nearest gold/silver each step
 \end{itemize}
 
 \end{alertblock}
 
-%% METHODOLOGY -- Part 1
-\begin{block}{3. Methodology}
 
-\textbf{3.1\quad Algorithms.}
+% ── Block 5 : Results ─────────────────────────────────────────────────────────
+\begin{block}{5.\enspace Results}
 
-\smallskip
-We implement four deep RL agents sharing comparable architectures for fair comparison:
+\figplaceholder[8cm]{Figure: learning curves (reward vs.\ training steps) --- MLP vs.\ CNN on simple env; ablation bar chart for hard env strategies}
 
-\smallskip
-\textbf{DQN}~\cite{mnih2015human} -- \textit{Value-based, off-policy.} Learns an action-value function $Q(s,a)$ via experience replay and a target network.
 \begin{itemize}
-  \item[\pro] Sample efficient through replay buffer, stable with target network.
-  \item[\con] Prone to overestimation of Q-values, discrete actions only.
+  \item MLP converges faster on simple env; CNN generalises better spatially on the hard env
+  \item Curriculum training essential: direct hard-env training without warmup collapses
+  \item Frame stacking + dueling architecture are the key components for dynamic obstacle avoidance
+  \item Double DQN and $n$-step returns provide consistent improvements across all settings
 \end{itemize}
-
-\smallskip
-\textbf{Double DQN}~\cite{van2016deep} -- \textit{Value-based, off-policy.} Decouples action selection from evaluation: $a^* = \arg\max_a Q_\theta(s',a)$, evaluated as $Q_{\theta^-}(s', a^*)$.
-\begin{itemize}
-  \item[\pro] Reduces overestimation bias, more accurate value estimates.
-  \item[\con] Still limited to discrete actions, moderate additional complexity.
-\end{itemize}
-
-\smallskip  
-\textbf{A2C}~\cite{mnih2016asynchronous} -- \textit{On-policy, actor-critic.} The actor learns a policy $\pi_\theta(a|s)$ while the critic estimates $V(s)$ to compute an advantage baseline.
-\begin{itemize}
-  \item[\pro] Reduced variance via baseline, supports continuous actions.
-  \item[\con] On-policy: lower sample efficiency, sensitive to hyperparameters.
-\end{itemize}
- 
-\smallskip
-\textbf{PPO}~\cite{schulman2017proximal} -- \textit{On-policy, policy gradient.} Clipped surrogate objective: $L^{\text{CLIP}}(\theta) = \mathbb{E}\!\left[\min\!\left(r_t(\theta)\hat{A}_t,\; \text{clip}(r_t(\theta), 1\!\pm\!\epsilon)\hat{A}_t\right)\right]$.
-\begin{itemize}
-  \item[\pro] Stable updates via trust region, robust across tasks.
-  \item[\con] On-policy: requires large batches, computationally heavier per update.
-\end{itemize}
-
-\bigskip
-\textbf{3.2\quad Neural Network Policies.}
-
-\smallskip
-\textbf{MLP Policy.} A fully-connected network that takes a \textbf{flattened state vector} as input. Used with the full grid (768-dim), egocentric (147-dim), and feature vector (10-dim) encodings. Simple and fast to train.
-
-\smallskip
-\textbf{CNN Policy.} A custom convolutional feature extractor preserving the \textbf{spatial} $16\!\times\!16\!\times\!3$ grid structure. Two convolutional layers (16 and 32 filters, $3\!\times\!3$ kernels) followed by a 256-unit fully-connected layer. Enables the agent to learn \textbf{spatial patterns} (walls, body segments, food proximity) directly from the grid.
-\end{block}
-
-%% ---- COLUMN 2 ----
-\columnbreak
-
-%% METHODOLOGY -- Part 2
-\begin{block}{}
-\textbf{3.3\quad Modular Wrapper.}
-
-\smallskip
-We designed a \texttt{ModularSnakeWrapper} built on top of Gymnasium that \textbf{decouples state encoding and reward computation} from the base environment, enabling systematic experimentation.
-
-\smallskip
-\textbf{State Encoders} (interchangeable via configuration):
-\begin{itemize}
-  \item[{\color{green}$\star$}] \textbf{Full Grid}: flattened $16\!\times\!16\!\times\!3$ board $\rightarrow$ 768-dim vector (MLP) or 3D tensor (CNN).
-  \item[{\color{red}$\star$}] \textbf{Egocentric}: $7\!\times\!7$ window centered on the head $\rightarrow$ 147-dim vector (MLP) or 3D tensor (CNN).
-  \item[{\color{blue}$\star$}] \textbf{Feature Vector}: 10 hand-crafted features (food direction, danger indicators, normalized distances).
-\end{itemize}
-
-\smallskip
-\textbf{Reward Functions} (interchangeable via configuration):
-\begin{itemize}
-  \item[{\color{red}$\star$}] \textbf{Sparse}: \textcolor{progreen}{$+1$} for food, \textcolor{conred}{$-1$} for death/timeout. Minimal signal.
-  \item[{\color{green}$\star$}] \textbf{Dense}: \textcolor{progreen}{$+10$} for food, \textcolor{conred}{$-10$} for death. Includes Manhattan distance shaping ($\Delta d \cdot \alpha$), loop detection penalty (\textcolor{conred}{$-8$} when a position is visited $\geq 4$ times in a window of 20 steps), and timeout penalty (\textcolor{conred}{$-5$}).
-\end{itemize}
-
-\smallskip
-The wrapper also tracks episode step counts and maintains previous-step information for reward computation.
 
 \end{block}
 
-%% EXPERIMENTAL SETUP & RESULTS
-\begin{block}{4. Experimental Setup \& Results}
 
-\textbf{Setup.}
-All agents are trained for \textbf{5{,}000{,}000 timesteps} on a $16\!\times\!16$ grid using the Gymnasium \texttt{Snake-v1} environment with our custom wrapper. Key hyperparameters: TODO.
-
-\smallskip
-\textbf{Evaluation Metrics.}
-\begin{align*}
-  &\text{Average score (food collected)} && \text{Maximum snake length} \\
-  &\text{Survival time (steps)} && \text{Cumulative reward}
-\end{align*}
-
-\bigskip
-\textbf{Results.}
-
-\bigskip
-\begin{center}
-\textit{[Placeholder: Learning curves -- Average reward vs.\ training steps for all agents]}
-\end{center}
-
-\bigskip
-\begin{center}
-\textit{[Placeholder: Bar plot -- Average food collected per agent and state representation]}
-\end{center}
-
-\bigskip
-\begin{center}
-\textit{[Placeholder: Reward shaping comparison -- Sparse vs.\ dense reward across agents]}
-\end{center}
-
-\bigskip
-
-\end{block}
-
-%% CONCLUSIONS
-\begin{block}{5. Conclusions}
-\begin{itemize}
-    \item Dense rewards and CNN policies significantly outperform sparse rewards and MLP baselines on the Snake game. TODO
-    \item Our modular wrapper enables systematic ablation of state representations and reward functions, providing a reusable benchmark for grid-based RL.
-\end{itemize}
-\end{block}
-
-%% REFERENCES
+% ── References ────────────────────────────────────────────────────────────────
 \begin{block}{References}
-{\tiny
-\printbibliography[heading=none]
-}
+{\tiny\printbibliography[heading=none]}
 \end{block}
+
 
 \end{multicols}
 \end{frame}

@@ -1,1 +1,0 @@
-This repository contains the labs by Adonis Jamal and Jean-Vincent Martini for the "Deep Learning in Practice" course of MVA master's degree (ENS Paris-Saclay) and CentraleSupélec.

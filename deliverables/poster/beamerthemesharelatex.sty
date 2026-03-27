@@ -25,17 +25,17 @@
 % Headline / title block
 \setbeamertemplate{headline}{
   \leavevmode
-  \begin{beamercolorbox}[wd=\paperwidth]{headline}
+  \begin{beamercolorbox}[wd=\paperwidth,ht=8.5cm]{headline}
     \begin{tikzpicture}[remember picture]
-      \fill[primary] (0,0) rectangle (\paperwidth, 7.8cm);
-      \node[anchor=west, text=white, font=\Large\bfseries, text width=0.75\paperwidth, align=left] 
-        at (1.5cm, 5.5cm) {\inserttitle};
-      \node[anchor=west, text=white!85, font=\normalsize] 
-        at (1.5cm, 3.5cm) {\insertauthor};
-      \node[anchor=west, text=white!70, font=\small] 
-        at (1.5cm, 2.5cm) {\insertinstitute};
-      \node[anchor=east, text=white, font=\small] 
-        at (\paperwidth-1.5cm, 2.5cm) {\insertdate};
+      \fill[primary] (0,0) rectangle (\paperwidth, 8.5cm);
+      \node[anchor=west, text=white, font=\Huge\bfseries, text width=0.75\paperwidth, align=left]
+        at (1.5cm, 6.5cm) {\inserttitle};
+      \node[anchor=west, text=white!85, font=\normalsize]
+        at (1.5cm, 3.8cm) {\insertauthor};
+      \node[anchor=west, text=white!70, font=\small]
+        at (1.5cm, 2.8cm) {\insertinstitute};
+      \node[anchor=east, text=white, font=\small]
+        at (\paperwidth-1.5cm, 2.8cm) {\insertdate};
     \end{tikzpicture}
   \end{beamercolorbox}
   \vskip0.15cm

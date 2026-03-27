@@ -112,7 +112,7 @@
 
 \begin{figure}[h]
     \centering
-    \includegraphics[width=0.35\linewidth]{img/Long snake problem.png}
+    \includegraphics[width=0.3\linewidth]{img/Long snake problem.png}
     \caption{Snake is trapped}
     \label{fig:snaketrapped}
 \end{figure}
@@ -139,13 +139,13 @@ $\rightarrow$ encourages spacing and prevents collapse.
     \label{fig:map_hard}
 \end{figure}
 
-\begin{itemize}
-  \item \textbf{Gold food} ($+5$): primary target; respawns immediately after eating
-  \item \textbf{Silver food} ($+0.5$): secondary target; worth pursuing when gold is far
-  \item \textbf{Poison food}: shrinks snake by 2 segments; must be actively avoided
-  \item \textbf{Static obstacles}: fixed 3-cell walls placed at episode reset; lethal on contact
-  \item \textbf{Dynamic obstacles}: 3-cell walls bouncing back and forth within a fixed range; lethal even if the wall \emph{moves into} a stationary snake
-\end{itemize}
+% \begin{itemize}
+%   \item \textbf{Gold food} ($+5$): primary target; respawns immediately after eating
+%   \item \textbf{Silver food} ($+0.5$): secondary target; worth pursuing when gold is far
+%   \item \textbf{Poison food}: shrinks snake by 2 segments; must be actively avoided
+%   \item \textbf{Static obstacles}: fixed 3-cell walls placed at episode reset; lethal on contact
+%   \item \textbf{Dynamic obstacles}: 3-cell walls bouncing back and forth within a fixed range; lethal even if the wall \emph{moves into} a stationary snake
+% \end{itemize}
 
 \end{block}
 
@@ -186,26 +186,30 @@ CNN (moving obs.)   & 14.8 & 11.7 & 11.3 & 0.08 \\
   \item \textbf{Dueling and Double QDN:} shared convolutional trunk splits into a state-value head $V(s)$ and an advantage head $A(s,a)$; $Q = V + (A - \bar{A})$; faster convergence in states where survival matters more than which food to chase
 \end{itemize}
 
-\textbf{Training stability}
-\begin{itemize}
-  \item \textbf{Frame stacking ($n\!=\!4$):} stacks the last 4 grid observations into a $(4C\!\times\!H\!\times\!W)$ tensor; allows the agent to \emph{infer motion} (e.g.\ obstacle velocity), partially mitigating partial observability and making the state closer to Markovian
-  \item \textbf{Dueling + Double DQN:} shared convolutional trunk splits into a state-value head $V(s)$ and an advantage head $A(s,a)$; $Q(s,a) = V(s) + \big(A(s,a) - \bar{A}(s)\big)$; improves stability (Double DQN) and learning efficiency when many actions have similar value (Dueling)
-\end{itemize}
 \textbf{Reward engineering}
 \begin{itemize}
-  \item \textbf{Distance shaping:} $r_t \mathrel{+}= \lambda\,(d_{t-1} - d_t)$ toward nearest gold/silver; provides dense signal when food is scarce on cluttered maps
-  \item \textbf{Body-proximity shaping:} $r_t \mathrel{+}= \mu\,(b_t - b_{t-1})$ where $b_t$ is distance to nearest body segment; discourages spiral trapping as snake grows
-  \item \textbf{Step penalty ($-0.01$/step):} penalises stalling; forces the agent to make progress rather than circling obstacles indefinitely
+  \item \textbf{Distance shaping:} $r_t \mathrel{+}= \lambda\,(d_{t-1} - d_t)$ toward nearest gold/silver; 
+  \item \textbf{Body-proximity shaping:} $r_t \mathrel{+}= \mu\,(b_t - b_{t-1})$ where $b_t$ is distance to nearest body 
+  \item \textbf{Step penalty ($-0.01$/step):} penalises stalling
 \end{itemize}
 
 \begin{figure}[h]
     \centering
-    \includegraphics[width=0.8\linewidth]{img/Hard_cnn_mlp.png}
+    \includegraphics[width=0.7\linewidth]{img/Hard_cnn_mlp.png}
     \caption{CNN vs MLP Agents comparison in hard mode}
     \label{fig:example}
 \end{figure}
-
 \end{block}
+
+\begin{block}{6. Final performance}
+  \begin{figure}[h]
+    \centering
+    \includegraphics[width=0.4\linewidth]{img/final snakie.png}
+    \caption{Final state of the snake agent}
+    \label{fig:final}
+\end{figure}
+\end{block}
+
 
 \end{multicols}
 \end{frame}

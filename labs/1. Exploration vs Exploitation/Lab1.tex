@@ -1,0 +1,78 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{float}
+
+\title{RL Lab 1 - Exploration vs Exploitation}
+\author{Adonis Jamal}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Greedy Agent}
+\subsection{How did our agent do?}
+Comment on the average reward graph throughout the agent's training. Is it possible for it to do better? If so, how?
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/greedy_agent_reward.png}
+    \caption{Average reward during training for the greedy agent}
+    \label{fig:greedy}
+\end{figure}
+
+Compared to the best possible average reward, our greedy agent does not perform optimally. This is due to the greedy approach, which can cause the agent to get stuck in a local optimum and miss out on potentially better actions.
+
+It is possible for the agent to do better by incorporating an exploration strategy, such as epsilon-greedy, which allows the agent to occasionally choose random actions and explore the action space more effectively. This can help the agent discover better actions that it might have missed with a purely greedy approach.
+
+
+\section{Epsilon-Greedy Agent}
+\subsection{What do you notice?}
+Explain the difference between the greedy and epsilon-greedy agents and comment on the average reward graph throughout the agent's training.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/epsilon_greedy_reward.png}
+    \caption{Average reward during training for the epsilon-greedy agent}
+    \label{fig:epsilon_greedy}
+\end{figure}
+
+The epsilon-greedy agent performs better than the greedy agent. The greedy agent gets stuck in a local optimum and fails to discover the true best action, while the epsilon-greedy agent explores the action space more effectively, even after finding a good action, and is able to find better actions, leading to higher average rewards.
+
+The choice of epsilon is also important, as it represents the trade-off between exploration and exploitation. A higher epsilon encourages more exploration, which can help the agent discover better actions, but it can also lead to suboptimal performance if it explores too much. A lower epsilon encourages more exploitation, which can lead to better performance if the agent has already found a good action, but it can also lead to suboptimal performance if the agent gets stuck in a local optimum.
+
+For the above run with epsilon = 0.1, the agent does not find the optimal action within the 1000 steps, but it does find a better action than the greedy agent, which is reflected in the higher average reward.
+
+
+\section{Comparing Values of $\epsilon$}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/epsilon_comparison.png}
+    \caption{Comparison of average reward for $\epsilon = \{0.0, 0.01, 0.1, 0.4\}$}
+    \label{fig:epsilon_comparison}
+\end{figure}
+
+\subsection{Why did $\epsilon = 0.1$ perform better than $\epsilon = 0.01$?}
+The epsilon value of 0.1 performed better than 0.01 because it provided, as discussed above, a better balance between exploration and exploitation. With an epsilon of 0.01, the agent explores very rarely, especially compared to an epsilon of 0.1, which explores other actions $10\%$ of the time. This means that with an epsilon of 0.01, the agent is more likely to get stuck in a local optimum and miss out on discovering better actions, while with an epsilon of 0.1, the agent has a better chance of finding the optimal action.
+
+\subsection{Why did $\epsilon = 0.4$ perform worse than $\epsilon = 0.0$ (the greedy agent)?}
+The epsilon value of 0.4 performed worse than 0.0 (the greedy agent) because it explores too much, which can lead to suboptimal performance. With an epsilon of 0.4, the agent explores other actions $40\%$ of the time, which means that it is not exploiting the best-known action enough and is instead taking random actions too frequently. This can lead to lower average rewards compared to the greedy agent, which always exploits the best action it has found.
+
+
+\section{Effects of the Step Size}
+\subsection{Effect of using a step size of $1 / N(A)$}
+The agent with a step size of $1 / N(A)$ performed better at the start but worse when the environment changed. Explain what happened.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{figures/step_size_effect.png}
+    \caption{Effect of step size on average reward when the environment changes}
+    \label{fig:step_size}
+\end{figure}
+
+Using an adaptive step size like 1/N(A) allows the agent to quickly learn the true value of an action when it is first being explored, but as the action is selected more frequently, the step size decreases, which can make it difficult for the agent to adapt to changes in the environment. In a non-stationary environment where the expected rewards of actions can change over time, a constant step size can allow the agent to continue learning and adapting to changes, while an adaptive step size that decreases over time may struggle to keep up with changes in the environment, leading to suboptimal performance.
+
+\end{document}

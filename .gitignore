@@ -8,7 +8,6 @@ lectures/
 *.npy
 *.docx
 individual assignment/2526_RL_Assignment_CS3A.pdf
-notes.md
 
 # Latex
 *.aux

@@ -36,7 +36,7 @@ deliverables/     # Poster, proposal, and report (LaTeX sources)
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/JeanJNMV/MDS-RL_SnakeAgent.git
 cd MDS-RL_Snake_Agent
 
 # Install with uv (creates a virtual environment automatically)

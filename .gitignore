@@ -34,4 +34,5 @@ test_output/
 *.fls
 *.fdb_latexmk
 *.run.xml
+*.xsim
 */output/

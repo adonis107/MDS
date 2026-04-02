@@ -1,4 +1,4 @@
-\documentclass[11pt]{article}
+\documentclass[11pt]{report}
 \usepackage[a4paper, left=2cm, right=2cm, top=2.5cm, bottom=2.5cm]{geometry}
 \usepackage{theme}
 \usepackage{shortcuts}
@@ -67,6 +67,8 @@ Adonis JAMAL \quad Jean-Vincent MARTINI\par
 }
 \vspace{0.5cm}
 {\large Supervisor: Damien CHALLET\par}
+\vspace{0.2cm}
+{\large Academic Tutor: Lionel GABET\par}
 
 \vfill
 
@@ -85,68 +87,897 @@ Adonis JAMAL \quad Jean-Vincent MARTINI\par
 
 \end{titlepage}
 
-% ==============================================================================
-% SECTION: ABSTRACT
-% ==============================================================================
-\newpage
-\section*{Abstract}
 
 % ==============================================================================
-% SECTION: ACKNOWLEDGEMENTS
+% ABSTRACT
 % ==============================================================================
-\newpage
-\section*{Acknowledgements}
+\chapter*{Abstract}
+% [CONTENT] One paragraph. State the problem (detecting spoofing, layering,
+% and quote stuffing in limit order books without labelled data), the approach
+% (three complementary unsupervised models with Hawkes-inspired and
+% microstructural features, adaptive EVT thresholds, and interpretability
+% methods), the main results (anomaly rates across time periods, cross-year
+% stability, cluster structure of detected anomalies, spoofing gain estimates),
+% and why they matter (first multi-model unsupervised pipeline combining
+% probabilistic density estimation, robust autoencoders, and economic gain
+% quantification on the same LOB dataset).
+
 
 % ==============================================================================
-% SECTION: TABLE OF CONTENTS
+% ACKNOWLEDGEMENTS
+% ==============================================================================
+\chapter*{Acknowledgements}
+% [CONTENT] Thank Damien Challet for supervision and access to data, Lionel
+% Gabet for academic guidance, and the Ruche HPC cluster at Universit\'e
+% Paris-Saclay for GPU compute resources.
+
+
+% ==============================================================================
+% TABLE OF CONTENTS
 % ==============================================================================
 \newpage
 \tableofcontents
 
 
 % ==============================================================================
-% SECTION : INTRODUCTION AND CONTRIBUTIONS
+% CHAPTER 1: INTRODUCTION
 % ==============================================================================
-\newpage
-\section{Introduction and Contributions}
-\cite{fabre_2025}
+\chapter{Introduction}\label{chap:intro}
+
+\section{Context and Motivation}\label{sec:intro:context}
+
+Modern securities exchanges organise trading through electronic limit order books.
+A limit order book (LOB) records all outstanding buy and sell orders at each price level, providing a real-time, public summary of supply and demand.
+The instantaneous state of the book, defined by the distribution of volume across price levels on both sides, and the recent flow of incoming orders jointly determine short-term price dynamics.
+Tao et al.~\cite{tao_2020} model this dependence through a multi-level volume imbalance that aggregates supply and demand across several price levels, showing that imbalance shifts are directly linked to the probability distribution of subsequent price moves.
+Fabre and Challet~\cite{fabre_2025} extend this line of work by introducing Hawkes-inspired order flow features that capture both the size and the distance of placement of new limit orders, demonstrating on cryptocurrency data that these features predict the conditional distribution of mid-price movements.
+
+Market manipulation exploits this dependence.
+By artificially altering either the instantaneous book state or the order flow, a manipulator can induce a predictable price response and profit from it.
+Spoofing, the primary focus of this project, consists of placing large visible limit orders with no intention of execution.
+These orders shift the perceived supply-demand balance, move the mid-price in the desired direction, and are cancelled once the manipulator's genuine order on the opposite side has been filled.
+Layering extends spoofing by stacking multiple non-bona-fide orders across several price levels, amplifying the perceived depth on one side of the book~\cite{fabre_2025}.
+Both strategies distort the volume imbalance: Tao et al.~\cite{tao_2020} show that the optimal spoofing action shifts the multi-level imbalance away from its equilibrium value, and that comparing the observed imbalance before a market order to its long-run distribution provides a basis for detection.
+
+The regulatory treatment of these strategies differs sharply between asset classes.
+In regulated equity and derivatives markets, spoofing and layering are explicitly prohibited under the European Market Abuse Regulation (EU MAR) and the US Dodd-Frank Act.
+In cryptocurrency markets, the absence of equivalent regulation opens the door to manipulative behaviour on a larger scale~\cite{fabre_2025}.
+Fabre and Challet, working on Level-3 crypto order book data, find that 31\% of large orders on the BTC-USD pair could profitably spoof the market over a four-day period.
+This asymmetry suggests that crypto order book data should contain a substantially higher base rate of manipulative patterns than equity data, a hypothesis that motivates future comparative work.
+
+A binary classifier that labels each event as ``manipulative'' or ``not'' is poorly suited to this detection problem for three reasons.
+First, no ground-truth labels exist: in equity markets, confirmed manipulation cases are rare and not publicly annotated at the order level.
+Second, manipulation is not a discrete category but a spectrum of intent, from aggressive but legitimate liquidity provision to unambiguous spoofing.
+Third, a probabilistic score is more actionable than a binary flag: it allows a surveillance system to rank events by severity and calibrate alert thresholds to a desired false discovery rate.
+Fabre and Challet~\cite{fabre_2025} address these requirements with a probabilistic neural network that outputs a full predictive distribution over future price moves, from which both an anomaly score (the negative log-likelihood) and an economic spoofing gain estimate can be derived.
+
+
+\section{Research Questions}\label{sec:intro:questions}
+
+This project investigates the following questions:
+
+\begin{enumerate}
+    \item Can unsupervised probabilistic models trained on order book features detect anomalous order flow in the absence of ground-truth labels?
+    \item Which order book features carry the most information about anomalous events, and do different detection models agree on the same discriminative features?
+    \item How should anomaly thresholds be calibrated in a non-stationary, streaming setting when no labelled data are available?
+    \item Can the economic profitability of a spoofing strategy be estimated directly from model predictions, providing an interpretable measure of manipulation opportunity?
+    \item Do detection patterns remain stable across different time periods, when models trained on one year are applied to data from other years?
+\end{enumerate}
+
+These questions are addressed on the TOTF.PA (TotalEnergies, Euronext Paris) limit order book dataset, covering trading days from 2009, 2010, 2015, and 2017.
+
+
+\section{Contributions}\label{sec:intro:contributions}
+
+The main contributions of this report are:
+
+\begin{enumerate}
+    \item A modular detection pipeline that combines three complementary unsupervised models on the same equity LOB dataset (TOTF.PA, Euronext Paris): a Transformer bottleneck autoencoder inspired by Poutr\'e et al.~\cite{poutre_2024}, coupled with a Nystr\"om-approximated One-Class SVM in latent space; a Probabilistic Neural Network (PNN) that predicts skew-normal price move distributions following the framework of Fabre and Challet~\cite{fabre_2025}; and a Probabilistic Robust Autoencoder (PRAE) with learnable per-sample gates~\cite{lindenbaum2022prae}. Each model produces a scalar anomaly score per time step; their agreement identifies the highest-confidence anomalies.
+
+    \item A feature engineering library of approximately 80 features synthesising contributions from multiple sources: Hawkes-inspired memory features with spatial and temporal decay~\cite{fabre_2025}, weighted multi-level volume imbalance~\cite{tao_2020}, event flow and cancellation rapidity~\cite{poutre_2024}, multi-level order flow imbalance, and standard microstructural indicators (spread, volatility, elasticity).
+
+    \item Application of the spoofing gain framework of Fabre and Challet~\cite{fabre_2025} to equity LOB data.  The PNN-predicted skew-normal parameters feed an expected cost model that quantifies the profitability of a hypothetical spoofing strategy at each time step, producing an interpretable economic measure of manipulation opportunity.
+
+    \item A systematic comparison of four threshold methods for converting continuous anomaly scores into binary alerts without labels: Peak Over Threshold (POT), Streaming POT (SPOT), Drift-aware Streaming POT (DSPOT)~\cite{siffer:hal-01640325}, and a rolling Benjamini-Hochberg False Discovery Rate controller (RFDR).
+
+    \item Interpretability analysis via Integrated Gradients~\cite{sundararajan2017axiomaticattributiondeepnetworks} for the PNN and PRAE, and Grouped Occlusion for the Transformer+OC-SVM, identifying which feature families and which sides of the order book drive each model's anomaly scores.
+
+    \item Post-hoc characterisation of detected anomalies through HDBSCAN clustering of the three anomaly scores and microstructural jump analysis (bipower variation, variance ratio, CUSUM), providing an unsupervised taxonomy of anomaly types.
+
+    \item Cross-year robustness evaluation: models trained on 2015 data are tested on 2009, 2010, and 2017 data, and models trained on 2017 data are tested on the same periods, assessing whether the pipeline detects consistent patterns across different market regimes.
+\end{enumerate}
+
+
+\section{Report Outline}\label{sec:intro:outline}
+
+Chapter~\ref{chap:background} reviews the literature on limit order book microstructure, market manipulation, and the detection methods that this project builds on.
+Chapter~\ref{chap:methodology} formalises the feature engineering pipeline, the three detection models with their loss functions, the threshold methods, the spoofing gain framework, and the interpretability and post-hoc analysis tools.
+Chapter~\ref{chap:data} describes the TOTF.PA dataset, the preprocessing steps, the sequential training protocol, and the experimental setup.
+Chapter~\ref{chap:results} presents the experimental findings: model diagnostics, anomaly detection rates, threshold comparisons, sensitivity analysis, anomaly clustering, jump analysis, and cross-year robustness.
+Chapter~\ref{chap:discussion} discusses the limitations of the approach, compares the three detection models, and interprets the detected anomalies in light of known manipulation signatures.
+Chapter~\ref{chap:conclusion} summarises the contributions and outlines directions for future work.
+
 
 % ==============================================================================
-% SECTION : METHODOLOGY
+% CHAPTER 2: BACKGROUND AND RELATED WORK
 % ==============================================================================
-\section{Methodology}
+\chapter{Background and Related Work}\label{chap:background}
+
+This chapter provides the conceptual vocabulary and critical perspective needed to evaluate the methodological choices presented in Chapter~\ref{chap:methodology}.
+Each section introduces a class of approaches, explains what it is good at, where it struggles, and what assumptions it makes.
+Formal definitions, model architectures, and training procedures are deferred to Chapter~\ref{chap:methodology}.
+
+\section{Limit Order Books and Market Microstructure}\label{sec:background:lob}
+
+A limit order book records all outstanding buy and sell orders for a security, organised by price and submission time.
+At time~$t$, the book state consists of $L$ price levels on each side.
+The bid (buy) side lists prices $p^b_1 > p^b_2 > \cdots > p^b_L$ with corresponding volumes $v^b_1, v^b_2, \ldots, v^b_L$.
+The ask (sell) side lists prices $p^a_1 < p^a_2 < \cdots < p^a_L$ with volumes $v^a_1, v^a_2, \ldots, v^a_L$.
+The best bid is~$p^b_1$, the best ask is~$p^a_1$, the mid-price is $p_{\text{mid}} = (p^a_1 + p^b_1)/2$, and the spread is $s = p^a_1 - p^b_1$.
+
+Three event types modify the book state.
+A \emph{limit order} adds volume at a specified price level, increasing liquidity.
+A \emph{cancellation} removes a previously placed limit order, reducing liquidity at that level.
+A \emph{market order} (equivalently, a trade) consumes volume at the best price on the opposite side, removing liquidity and potentially shifting the best price.
+
+The instantaneous distribution of volume across price levels and the temporal sequence of these events jointly determine short-term price dynamics.
+Volume imbalance, the normalised excess of bid over ask volume at a given level, is a widely used summary statistic of the book state.
+Tao et~al.~\cite{tao_2020} extend the single-level imbalance to a weighted multi-level measure that aggregates supply and demand across several price levels, and show on TMX (Toronto Stock Exchange) data that this quantity is directly linked to the probability distribution of subsequent price moves.
+Fabre and Challet~\cite{fabre_2025} complement imbalance with Hawkes-inspired features that capture both the size and the spatial placement depth of new limit orders, demonstrating on cryptocurrency data that these features predict the conditional distribution of mid-price movements.
+
+\section{Market Manipulation Strategies}\label{sec:background:manipulation}
+
+Spoofing consists of submitting large, visible limit orders with no intention of execution to create a false impression of supply or demand.
+The lifecycle of a spoofing event follows a characteristic sequence:
+(1)~the manipulator places one or more large limit orders on one side of the book, shifting the perceived imbalance;
+(2)~the mid-price moves in the direction favoured by the manipulator;
+(3)~the manipulator executes a genuine order on the opposite side at the improved price;
+(4)~the non-bona-fide orders are cancelled.
+Layering extends spoofing by stacking multiple orders across several price levels on the same side, amplifying the perceived depth~\cite{fabre_2025}.
+Quote stuffing is a related strategy in which a large number of orders are rapidly submitted and cancelled to slow down other participants' systems and exploit the resulting latency advantage.
+
+Both spoofing and layering are prohibited under the European Market Abuse Regulation (EU MAR, Article~12) and the US Dodd-Frank Act (Section~747).
+Detection is challenging because the same order flow patterns can arise from legitimate trading strategies, such as aggressive liquidity provision or inventory management.
+Tao et~al.~\cite{tao_2020} formalise the detection problem by modelling the imbalance shift caused by a spoof order and comparing the observed pre-trade imbalance distribution to its long-run counterpart via the Wasserstein distance.
+Fabre and Challet~\cite{fabre_2025} take an economic approach: rather than asking whether an order flow pattern looks abnormal, they ask whether a rational spoofer could profit from the current book state, defining the spoofing gain as the difference in expected execution cost between a scenario where the spoof order is present and one where it is absent.
+
+A binary classifier that labels each event as manipulative or not is poorly suited to this problem.
+No ground-truth labels exist at the order level; manipulation is a spectrum of intent rather than a discrete category; and a probabilistic score is more actionable than a binary flag because it allows ranking events by severity and calibrating alert thresholds to a desired false positive rate.
+
+\section{Anomaly Detection in Financial Data}\label{sec:background:anomaly}
+
+In the absence of ground-truth labels for manipulation, detection must proceed unsupervised.
+A central difficulty shared by all unsupervised approaches is the \emph{contamination problem}: training data collected from a real market inevitably contains some anomalous events, and their presence can degrade the learned model of normality.
+This section surveys three families of approaches and discusses their relative strengths and weaknesses for the LOB anomaly detection problem.
+
+\subsection{Reconstruction-Based Approaches}\label{subsec:background:reconstruction}
+
+Autoencoders learn a compressed representation of the training data and reconstruct each input from that representation.
+When the training set is predominantly normal, the model learns to reconstruct normal patterns well; anomalous inputs produce high reconstruction error because they deviate from the learned structure.
+This family has several merits: it requires no labels, captures complex multivariate dependencies, and generalises across instruments and time periods without task-specific supervision.
+
+For order book sequences, the choice of encoder architecture matters.
+Convolutional and recurrent architectures capture local patterns effectively but struggle with long-range dependencies between distant price levels or between events separated by many time steps.
+The Transformer architecture addresses this limitation through self-attention, which allows each position in the sequence to attend directly to every other position.
+Multi-head attention enables the model to simultaneously capture different aspects of the book state, such as volume dynamics at the top of the book, spread behaviour, and order arrival patterns deeper in the queue.
+Poutr\'e et~al.~\cite{poutre_2024} demonstrate on NASDAQ LOBSTER data that a Transformer autoencoder combined with a one-class classifier in the latent space outperforms the reconstruction error alone for detecting synthetically injected manipulation patterns (quote stuffing, layering, and pump-and-dump).
+
+A limitation of deterministic autoencoders is that the reconstruction error is a noisy proxy for anomaly severity: it does not distinguish between inputs that are merely unusual and inputs that fall outside the training distribution entirely.
+A probabilistic formulation, in which the autoencoder outputs a distribution over reconstructions rather than a point estimate, addresses this limitation by providing an uncertainty signal.
+Lindenbaum et~al.~\cite{lindenbaum2022prae} go further: rather than modifying the reconstruction itself, they introduce learnable per-sample gates that allow the training procedure to downweight suspected anomalies, so that the autoencoder focuses on reconstructing clean data even when the training set is contaminated.
+This makes the model robust to the contamination problem without requiring an explicit data-cleaning step.
+
+\subsection{Probabilistic Scoring via Synthetic Manipulation}\label{subsec:background:scoring}
+
+An alternative to asking ``does this look abnormal?''\ is to ask ``how much could a rational spoofer gain from this book state?''
+Fabre and Challet~\cite{fabre_2025} pursue this reframing by training a probabilistic neural network that predicts the full conditional distribution of the next mid-price move.
+The predicted distribution serves two purposes: its negative log-likelihood provides a general anomaly score (events where the realised price move is unlikely under the model receive high scores), and its parameters feed an expected cost model that quantifies the profitability of a hypothetical spoofing strategy at each time step.
+
+The merits of this approach are substantial.
+The spoofing gain score has a direct economic interpretation, which makes it more actionable for a market surveillance system than a generic reconstruction error.
+Training on the predictive task sidesteps the need for labelled manipulation data: the model learns normal price dynamics, and deviations from that model are flagged regardless of their cause.
+The probabilistic output naturally quantifies uncertainty over the predicted price move, which matters for heavy-tailed financial data where point predictions are unreliable.
+
+The limitations are equally clear.
+The spoofing gain depends on a model of the spoofer's strategy (order size, placement distance, fee structure), so it may miss manipulation patterns that deviate from that model.
+The approach was developed and evaluated on cryptocurrency LOB data (BTC-USD and ETH-USD on Coinbase)~\cite{fabre_2025}, where the absence of anti-manipulation regulation results in a higher base rate of manipulative behaviour; its effectiveness on regulated equity markets, where manipulation is rarer and subtler, has not been established in the literature.
+
+\subsection{One-Class and Density-Based Approaches}\label{subsec:background:oneclass}
+
+One-class classification methods learn a tight boundary around the training data in a transformed feature space and flag anything outside that boundary as anomalous.
+The One-Class SVM (OC-SVM) is the most widely used instance: it finds a hyperplane in a kernel-induced feature space that separates the data from the origin with maximum margin, controlled by a parameter $\nu$ that bounds the fraction of training points allowed outside the boundary.
+
+The strengths of the OC-SVM are computational efficiency and theoretical simplicity.
+It does not require specifying what an anomaly looks like, only what normal data looks like, and the kernel trick allows it to capture non-linear structure in the input space.
+However, it does not scale well to high-dimensional feature spaces without careful kernel design: in the approximately 80-dimensional feature space typical of LOB anomaly detection, the RBF kernel becomes poorly calibrated and the decision boundary may either collapse or become too loose.
+Low-rank kernel approximations (such as the Nystr\"om method) partially address this issue by projecting the kernel evaluation into a tractable subspace, enabling GPU-accelerated training.
+A further limitation is that the OC-SVM does not produce a calibrated probability; its decision function is a signed distance, not a likelihood, which complicates downstream interpretation and threshold calibration.
+
+For the LOB problem, the OC-SVM is most effective when applied not to raw features but to a learned latent representation.
+Poutr\'e et~al.~\cite{poutre_2024} demonstrate this by fitting an OC-SVM in the bottleneck space of a Transformer autoencoder, where the reduced dimensionality and the learned structure of the representation make the kernel boundary more discriminative.
+This two-stage approach combines the representation power of reconstruction-based methods with the boundary-learning capacity of one-class classification.
+
+\section{Thresholding Methods for Anomaly Detection}\label{sec:background:thresholding}
+
+Any continuous anomaly score requires a threshold to produce a detection decision.
+The naive approach, a fixed percentile of the score distribution, assumes that the distribution is stationary and well-behaved.
+In financial data, score distributions are heavy-tailed and non-stationary: a fixed percentile will produce too many false positives during volatile periods and miss anomalies during quiet periods.
+Setting thresholds without labels is therefore a problem in its own right.
+
+\paragraph{Extreme Value Theory (EVT).}
+EVT models the tail of the score distribution rather than the bulk, fitting a Generalised Pareto Distribution to the exceedances above a high initial threshold.
+This is well-suited to heavy-tailed data because the statistical guarantee applies specifically to extreme quantiles, where fixed-percentile methods are least reliable.
+Siffer et~al.~\cite{siffer:hal-01640325} extend the batch EVT estimator to streaming settings with two algorithms: SPOT, which updates the tail model as new peaks arrive, and DSPOT, which adds a drift correction that tracks shifts in the baseline score level over time.
+The main assumption is that the tail of the score distribution is well-approximated by the GPD, which must be verified empirically for each model output.
+
+\paragraph{False Discovery Rate (FDR) Control.}
+FDR-based procedures, such as the Benjamini-Hochberg method, control the expected proportion of false positives among all flagged events.
+This is appropriate when anomalies are rare and the cost of false positives is high, because it bounds the discovery error rate rather than the absolute false positive count.
+The requirement is a set of p-values or a reference null distribution for the anomaly score, which must be estimated from the data when no parametric form is available.
+
+\paragraph{Rolling FDR (RFDR).}
+RFDR adapts the Benjamini-Hochberg procedure to a streaming setting by maintaining a sliding window of recent anomaly scores.
+Within each window, scores are log-transformed, converted to robust z-scores using the median absolute deviation, and mapped to p-values under a Gaussian assumption; the BH procedure then determines a dynamic threshold that controls the false discovery rate at level~$\alpha$.
+Because the null distribution is re-estimated at every step from the local window, RFDR tracks non-stationarity in the score distribution without requiring an explicit drift model.
+
+\paragraph{Implicit Model Thresholds.}
+Some detection methods produce a threshold as a byproduct of training rather than as a post-hoc step.
+The OC-SVM decision boundary, for instance, defines an implicit threshold in the feature space: points with negative decision function values are classified as anomalous.
+This is both a strength (the threshold is jointly optimised with the model) and a weakness (the threshold is not interpretable independently of the model and cannot be recalibrated without retraining).
+
+\section{Feature Attribution Methods}\label{sec:background:attribution}
+
+A detection score alone is not actionable for a market surveillance analyst: the analyst needs to know which features of the order book drove the score and whether those features align with known manipulation signatures.
+Attribution for sequential financial data is harder than for static inputs because features at different time steps and price levels are structurally correlated, and because the underlying distribution shifts over the trading day.
+
+Two broad families of attribution methods are relevant.
+Gradient-based methods, such as Integrated Gradients~\cite{sundararajan2017axiomaticattributiondeepnetworks}, accumulate the model's gradient along a path from a baseline input to the actual input, producing per-feature importance scores that are theoretically principled (they satisfy completeness and sensitivity axioms) and computationally tractable.
+Their limitation is that they require a differentiable end-to-end model, which excludes pipelines where a non-differentiable component (such as an OC-SVM) sits between the learned representation and the final score.
+
+For non-differentiable pipelines, ablation-based methods provide an alternative.
+Grouped occlusion replaces semantically related groups of features (all bid-side features, all Hawkes features, all features at a given price level) with a baseline value and measures the resulting change in the anomaly score.
+This approach is model-agnostic and handles the structured correlation among LOB features by operating at the group level rather than the individual feature level.
+The trade-off is lower resolution: it identifies which feature families matter, not which individual features within a family are most important.
 
 
 % ==============================================================================
-% SECTION : DATA AND EXPERIMENTAL SETUP
+% CHAPTER 3: METHODOLOGY
 % ==============================================================================
-\section{Data and Experimental Setup}
+\chapter{Methodology}\label{chap:methodology}
+% [CONTENT] Full formal description of the pipeline: data $\to$ features
+% $\to$ model $\to$ score $\to$ threshold $\to$ alert. Each section defines
+% the mathematical objects, the loss functions, and justifies design choices.
+
+\section{Feature Engineering}\label{sec:methodology:features}
+
+The raw limit order book data for TOTF.PA (TotalEnergies, Euronext Paris) records the state of the book at each update event during continuous trading hours (09:00--17:30 CET).
+Each row contains an Excel serial timestamp $t$ (column \texttt{xltime}, where the fractional part encodes the time of day) and the price and volume at $L = 10$ levels on each side: $p^b_1, V^b_1, \ldots, p^b_{10}, V^b_{10}$ for the bid and $p^a_1, V^a_1, \ldots, p^a_{10}, V^a_{10}$ for the ask, giving 41 columns per row.
+The data is event-driven: a new row is recorded whenever a limit order, cancellation, or trade modifies the visible book state, so the inter-event spacing is irregular.
+
+Feeding the 40 raw price-volume columns directly to a model is wasteful and fragile.
+Prices at adjacent levels are highly correlated, volumes are non-stationary, and the absolute price level carries no information about short-term dynamics.
+Engineered features reduce the input dimensionality to $d \approx 80$ informative quantities that are more stationary, more interpretable, and encode the domain knowledge needed to distinguish normal from anomalous order flow.
+
+The features are organised into seven groups: (1)~order book imbalance, capturing supply-demand asymmetry across depth levels; (2)~price dynamics and microstructure, summarising price movements and their relationship to volume; (3)~liquidity and elasticity, measuring the cost and shape of the book; (4)~volatility proxies; (5)~event flow and rapidity, characterising the intensity and type of order arrivals; (6)~Hawkes-inspired memory features, capturing self-exciting patterns in order flow with spatial and temporal decay; and (7)~order flow imbalance, measuring signed directional pressure from volume changes conditioned on price movements.
+Preprocessing and scaling are described in Section~\ref{subsec:features:preprocessing}.
+
+
+\subsection{Order Book Imbalance}\label{subsec:features:imbalance}
+
+Imbalance features quantify the asymmetry between supply and demand at various depths of the book.
+Spoofing and layering distort this asymmetry by injecting volume on one side; imbalance measures are therefore among the most direct indicators of manipulative intent.
+
+The Level-1 imbalance compares bid and ask volume at the best quotes:
+\begin{equation}
+  \label{eq:l1_imbalance}
+  I^{(1)}_t = \frac{V^b_{1,t} - V^a_{1,t}}{V^b_{1,t} + V^a_{1,t}}.
+\end{equation}
+Values near $+1$ indicate strong buy-side pressure; values near $-1$ indicate sell-side pressure.
+
+The Level-5 imbalance aggregates volume across the top five levels on each side:
+\begin{equation}
+  \label{eq:l5_imbalance}
+  I^{(5)}_t = \frac{\sum_{i=1}^{5} V^b_{i,t} - \sum_{i=1}^{5} V^a_{i,t}}{\sum_{i=1}^{5} V^b_{i,t} + \sum_{i=1}^{5} V^a_{i,t}}.
+\end{equation}
+A divergence between $I^{(1)}_t$ and $I^{(5)}_t$ suggests that volume is concentrated away from the best quotes, a pattern consistent with layering.
+
+To weight deeper levels more flexibly, we follow Tao et~al.~\cite{tao_2020} and define a weighted multi-level imbalance over $L = 5$ levels with weight vector $\mathbf{w} = (w_1, \ldots, w_5)$:
+\begin{equation}
+  \label{eq:weighted_imbalance}
+  I^{(\mathbf{w})}_t = \frac{\sum_{i=1}^{5} w_i \, V^b_{i,t}}{\sum_{i=1}^{5} w_i \, V^b_{i,t} + \sum_{i=1}^{5} w_i \, V^a_{i,t}}.
+\end{equation}
+This quantity lies in $[0, 1]$; values above $0.5$ indicate net bid-side weight.
+Three weight configurations are used: \emph{decreasing} $\mathbf{w} = (0.1, 0.1, 0.2, 0.2, 0.4)$, which emphasises deeper levels where spoof orders are less likely to be executed; \emph{increasing} $\mathbf{w} = (0.4, 0.2, 0.2, 0.1, 0.1)$, which emphasises the best quotes; and \emph{constant} $\mathbf{w} = (0.2, 0.2, 0.2, 0.2, 0.2)$, which weights all five levels equally.
+
+
+\subsection{Price Dynamics and Microstructure}\label{subsec:features:price}
+
+This group captures the immediate state of the price process and its first- and second-order dynamics.
+
+The mid-price and bid-ask spread are:
+\begin{equation}
+  \label{eq:midprice}
+  p_{\text{mid},t} = \frac{p^a_{1,t} + p^b_{1,t}}{2}, \qquad
+  s_t = p^a_{1,t} - p^b_{1,t}.
+\end{equation}
+
+The micro-price deviation measures how far the L1-imbalance-adjusted fair value lies from the mid-price:
+\begin{equation}
+  \label{eq:microprice_deviation}
+  \delta_t^{\text{micro}} = I^{(1)}_t \cdot \frac{s_t}{2}.
+\end{equation}
+A large deviation suggests that the balance of volume at the best quotes is pulling the fair value away from the geometric centre of the spread.
+
+The volume depth ratio measures the concentration of volume away from the best quote on each side $s \in \{b, a\}$:
+\begin{equation}
+  \label{eq:depth_ratio}
+  D^s_t = \frac{\sum_{i=2}^{5} V^s_{i,t}}{V^s_{1,t}}.
+\end{equation}
+High values indicate that most liquidity sits behind the best quote, a signature of layering where large volumes are placed at deeper levels.
+
+Log returns, velocity, and acceleration of the mid-price are:
+\begin{equation}
+  \label{eq:log_return}
+  r_t = \ln\!\left(\frac{p_{\text{mid},t}}{p_{\text{mid},t-1}}\right), \quad
+  v_t = p_{\text{mid},t} - p_{\text{mid},t-1}, \quad
+  a_t = v_t - v_{t-1}.
+\end{equation}
+
+The net order flow at Level~1 isolates volume changes that occur at a fixed price, filtering out changes caused by price-level shifts:
+\begin{equation}
+  \label{eq:net_flow}
+  F^s_t = \Delta V^s_{1,t} \cdot \mathbf{1}\!\left[p^s_{1,t} = p^s_{1,t-1}\right], \qquad s \in \{b, a\},
+\end{equation}
+where $\Delta V^s_{1,t} = V^s_{1,t} - V^s_{1,t-1}$.
+A large positive $F^b_t$ followed by a rapid cancellation is a textbook spoofing pattern.
+
+Volume deltas $\Delta V^b_{1,t}$ and $\Delta V^a_{1,t}$ at the best quotes are also retained as raw features, along with the rolling standard deviation of the mid-price over a window of $W = 50$ events.
+
+
+\subsection{Liquidity and Elasticity}\label{subsec:features:liquidity}
+
+These features describe how much it costs to execute a given order size and how steeply the book's price schedule rises with volume.
+
+The sweep-to-fill cost is the volume-weighted average price paid to execute a target order of size $Q = 1{,}000$ units by walking through $L = 10$ levels.
+Denoting by $C^s_t(Q)$ the resulting average execution price on side $s$, the reported features are the excess costs relative to the mid-price:
+\begin{equation}
+  \label{eq:sweep_cost}
+  \text{SC}^a_t = C^a_t(Q) - p_{\text{mid},t}, \qquad
+  \text{SC}^b_t = p_{\text{mid},t} - C^b_t(Q).
+\end{equation}
+Both quantities are non-negative under normal conditions.
+Large values indicate thin liquidity: a spoofing episode that removes genuine orders from the book can cause a spike in sweep cost.
+
+The book slope (elasticity) measures the sensitivity of price to cumulative volume.
+For each side $s$, a linear regression of price on log cumulative volume across the first $D = 5$ levels gives:
+\begin{equation}
+  \label{eq:book_slope}
+  p^s_{i,t} \approx \alpha^s_t + \beta^s_t \ln\!\left(\sum_{j=1}^{i} V^s_{j,t} + 1\right), \qquad i = 1, \ldots, D,
+\end{equation}
+and the feature is the absolute slope $|\beta^s_t|$.
+A steep slope (large $|\beta^s_t|$) indicates low liquidity, where a small volume would cause a large price change; a flat slope indicates a deep, resilient book.
+
+
+\subsection{Volatility}\label{subsec:features:volatility}
+
+Local volatility features capture the recent variability of the price process and of event timing.
+
+Rolling standard deviations of log returns are computed over two horizons:
+\begin{equation}
+  \label{eq:rolling_vol}
+  \sigma^{(W)}_t = \sqrt{\frac{1}{W-1}\sum_{k=0}^{W-1}(r_{t-k} - \bar{r}_t)^2}, \qquad W \in \{50, 100\}.
+\end{equation}
+
+The normalised price range over a window of $W = 50$ events measures extreme movements:
+\begin{equation}
+  \label{eq:price_range}
+  R_t = \frac{\max_{k \in [t-W+1, t]} p_{\text{mid},k} - \min_{k \in [t-W+1, t]} p_{\text{mid},k}}{p_{\text{mid},t}}.
+\end{equation}
+A sudden spike in $R_t$ without a corresponding increase in $\sigma^{(50)}_t$ may indicate a transient price dislocation caused by manipulation.
+
+The absolute velocity $|r_t|$ captures the instantaneous magnitude of price movement without directional information.
+
+The inter-event time $\Delta t_t = t - t_{t-1}$ (in fractions of a day, following the Excel \texttt{xltime} convention) and its logarithm $\ln(\Delta t_t + \epsilon)$, with $\epsilon = 10^{-6}$, are included to provide the models with information about event timing.
+Abnormally short inter-event times can signal quote-stuffing activity.
+
+
+\subsection{Event Flow and Rapidity}\label{subsec:features:eventflow}
+
+Following Poutr\'e et~al.~\cite{poutre_2024}, each LOB update is classified as either a cancellation or a trade based on observable price and volume changes.
+A cancellation on side $s$ is identified when the best price is unchanged and volume decreases ($p^s_{1,t} = p^s_{1,t-1}$ and $\Delta V^s_{1,t} < 0$).
+A trade on the bid (ask) side is identified when the opposite ask (bid) price changes, indicating that a market order has consumed liquidity.
+
+The event size features record the magnitude of each event type:
+\begin{equation}
+  \label{eq:event_size}
+  \text{Size}_t^{\text{cancel},s} = |\Delta V^s_{1,t}| \cdot \mathbf{1}[\text{cancel}^s_t], \qquad
+  \text{Size}_t^{\text{trade},s} = V^s_{1,t-1} \cdot \mathbf{1}[\text{trade}^s_t].
+\end{equation}
+Each of these four quantities, along with the raw Level-1 volume, is smoothed with a simple moving average over $W_{\text{SMA}} = 10$ events.
+
+Rapidity features measure the density of events per unit of calendar time:
+\begin{equation}
+  \label{eq:rapidity}
+  \rho_t^{\text{type},s} = \frac{\mathbf{1}[\text{type}^s_t]}{\Delta t_t}, \qquad \text{type} \in \{\text{cancel}, \text{trade}\}, \quad s \in \{b, a\}.
+\end{equation}
+High cancellation rapidity on one side of the book is a signature of quote stuffing, where a manipulator floods the exchange with rapid submissions and cancellations.
+
+Bid- and ask-side log returns ($\ln(p^s_{1,t} / p^s_{1,t-1})$ for $s \in \{b, a\}$) and price speed (log return divided by $\Delta t_t$) complete this group.
+
+
+\subsection{Hawkes-Inspired Memory Features}\label{subsec:features:hawkes}
+
+Following Fabre and Challet~\cite{fabre_2025}, we define order flow variables inspired by the self-exciting structure of Hawkes processes.
+Let $(N^{L,b}_t)_{t \geq 0}$ and $(N^{L,a}_t)_{t \geq 0}$ denote the point processes counting the arrivals of buy and sell limit orders, and let $(N^{M,b}_t)_{t \geq 0}$ and $(N^{M,a}_t)_{t \geq 0}$ denote the point processes of sell and buy marketable orders (i.e.\ orders that cause transactions on the bid and ask sides respectively).
+Each limit order carries two marks: a volume $v^{L,s}_t > 0$ and a distance of placement $\delta^{L,s}_t > 0$ from the best price, for $s \in \{b, a\}$.
+Each marketable order carries a volume mark $v^{M,s}_t > 0$.
+
+The limit-order and marketable-order flow variables are defined as
+\begin{equation}
+  \label{eq:limit_flow}
+  L^s_t(\phi) = \int_{(-\infty,t]} \phi(t - u,\, v^{L,s}_u,\, \delta^{L,s}_u)\, dN^{L,s}_u, \qquad s \in \{b, a\},
+\end{equation}
+\begin{equation}
+  \label{eq:market_flow}
+  M^s_t(\psi) = \int_{(-\infty,t]} \psi(t - u,\, v^{M,s}_u)\, dN^{M,s}_u, \qquad s \in \{b, a\},
+\end{equation}
+where $\phi$ is a positive kernel that weights each past limit order by its elapsed time, volume, and distance of placement, and $\psi$ is a positive kernel that weights each past marketable order by its elapsed time and volume.
+
+The kernels take exponential form with a linear volume function $f(v) = v$:
+\begin{equation}
+  \label{eq:limit_kernel}
+  \phi_{\beta,\eta}(t, v, \delta) = e^{-\beta t}\, v\, e^{-\eta \delta}, \qquad
+  \psi_{\beta}(t, v) = e^{-\beta t}\, v,
+\end{equation}
+where $\beta > 0$ controls the temporal decay rate and $\eta \geq 0$ controls the spatial decay rate.
+The exponential time kernel is chosen for two reasons: it satisfies the Markov property, which permits efficient recursive updates in a streaming setting, and combining multiple time scales $\beta$ approximates the slowly decaying empirical memory of order flow across several decades~\cite{fabre_2025}.
+
+Two families of kernels are constructed by varying $\beta$ over a finite set $\boldsymbol{\beta}$ and $\eta$ over a finite set $\boldsymbol{\eta}$:
+\begin{equation}
+  \label{eq:kernel_families}
+  \boldsymbol{\phi} = \{\phi_{\beta,\eta} : \beta \in \boldsymbol{\beta},\, \eta \in \boldsymbol{\eta}\}, \qquad
+  \boldsymbol{\psi} = \{\psi_{\beta} : \beta \in \boldsymbol{\beta}\}.
+\end{equation}
+The corresponding feature sets at time $t$ are
+\begin{equation}
+  \label{eq:feature_families}
+  \mathcal{L}_t = \bigl\{(L^b_t(\phi),\, L^a_t(\phi)) : \phi \in \boldsymbol{\phi}\bigr\}, \qquad
+  \mathcal{M}_t = \bigl\{(M^b_t(\psi),\, M^a_t(\psi)) : \psi \in \boldsymbol{\psi}\bigr\}.
+\end{equation}
+Each element of $\mathcal{L}_t$ captures limit-order flow at a specific combination of time and distance scales; each element of $\mathcal{M}_t$ captures marketable-order flow at a specific time scale.
+Small $\eta$ values give nearly equal weight to orders at all depths; large $\eta$ values concentrate attention on orders near the best quotes, so that distant spoof orders receive negligible weight.
+
+\paragraph{Adaptation to Level-2 data.}
+Fabre and Challet~\cite{fabre_2025} work with Level-3 data, where each order event is individually observed with its volume and distance of placement.
+Our dataset provides Level-2 snapshots (aggregate volume at each of $L = 10$ price levels), so the integrals in Equations~\eqref{eq:limit_flow}-\eqref{eq:market_flow} are approximated as follows.
+At each event $t$, the limit-order volume at level $i$ on side $s$ is inferred from positive volume changes at unchanged price levels: $[\Delta V^s_{i,t}]^{+} \cdot \mathbf{1}[p^s_{i,t} = p^s_{i,t-1}]$.
+The distance mark $\delta^{L,s}_{i,t}$ is set to $c \cdot |p^s_{i,t} - p_{\mathrm{mid},t}|$, where $c = 10^4$ converts Euro-denominated distances to a dimensionless quantity.
+Marketable-order flow is inferred from volume decreases at changing price levels.
+The continuous-time exponential decay $e^{-\beta t}$ is replaced by a discrete EWMA with half-life parameter $\beta$ (measured in events), applied to each side and kernel configuration independently.
+
+\paragraph{Parameter grid.}
+The time scales are $\boldsymbol{\beta} = \{10, 100, 1{,}000\}$ and the distance scales are $\boldsymbol{\eta} = \{0.001, 0.1, 1.0, 10.0\}$.
+With two sides of the book, $|\boldsymbol{\beta}| \times |\boldsymbol{\eta}| \times 2 = 24$ limit-order flow features form $\mathcal{L}_t$, and $|\boldsymbol{\beta}| \times 2 = 6$ marketable-order flow features form $\mathcal{M}_t$.
+
+\paragraph{Short- and long-horizon flows.}
+In addition to the kernel-weighted features above, limit-order and marketable-order flows at the best level (Level~1) are smoothed at two fixed half-lives ($h_s = 5$ and $h_\ell = 50$ events) for the limit component and at $h_s = 5$ for the market component, yielding six features: $L^b_t(h_s)$, $L^a_t(h_s)$, $M^b_t(h_s)$, $M^a_t(h_s)$, $L^b_t(h_\ell)$, $L^a_t(h_\ell)$.
+These correspond to the special case $\eta = 0$ (no spatial decay) with a single time scale, and capture the short- and long-term memory of order flow at the top of the book.
+
+\paragraph{Deep order insertions.}
+Volume increases at Level~5 are tracked separately to capture layering activity deep in the book.
+The positive volume change at Level~5, smoothed with an EWMA of half-life $h_d = 10$, produces two additional features (bid and ask).
+
+
+\subsection{Order Flow Imbalance}\label{subsec:features:ofi}
+
+Order flow imbalance (OFI) measures the net signed change in supply and demand at each price level, conditioned on whether the price at that level has moved.
+Unlike the imbalance features of Section~\ref{subsec:features:imbalance}, which compare static snapshots of volume, OFI captures the directional pressure exerted by incoming orders.
+
+At each level $i \in \{1, \ldots, 5\}$, the bid-side flow is:
+\begin{equation}
+  \label{eq:ofi_bid}
+  \phi^b_{i,t} =
+  \begin{cases}
+    V^b_{i,t}               & \text{if } p^b_{i,t} > p^b_{i,t-1}, \\
+    V^b_{i,t} - V^b_{i,t-1} & \text{if } p^b_{i,t} = p^b_{i,t-1}, \\
+    -V^b_{i,t-1}            & \text{if } p^b_{i,t} < p^b_{i,t-1},
+  \end{cases}
+\end{equation}
+and the ask-side flow $\phi^a_{i,t}$ follows the symmetric convention (positive when the ask price improves, i.e.\ decreases).
+The OFI at level $i$ is
+\begin{equation}
+  \label{eq:ofi}
+  \text{OFI}_{i,t} = \phi^b_{i,t} - \phi^a_{i,t}.
+\end{equation}
+Positive values indicate net buying pressure; negative values indicate net selling pressure.
+Computing OFI at five separate levels allows the models to distinguish pressure at the best quotes from pressure deeper in the book, which is relevant for detecting layering.
+
+
+\subsection{Preprocessing and Scaling}\label{subsec:features:preprocessing}
+
+Before the feature matrix enters any model, four cleaning steps are applied in sequence.
+First, the initial $W_{\text{warmup}} = 3{,}000$ rows of each trading day are discarded to allow all EWMA and rolling-window features to stabilise.
+Second, infinite values (arising from division by zero in rare edge cases) are replaced by zero.
+Third, each feature column is clipped at its $0.1\%$ and $99.9\%$ quantiles to remove extreme outliers while preserving the tail structure needed for anomaly detection.
+Fourth, any column with standard deviation below $10^{-9}$ is dropped as uninformative.
+
+Three scaling methods are available, selected per experiment.
+\emph{MinMax} scaling maps each feature to $[0, 1]$.
+\emph{Standard} scaling centres each feature to zero mean and unit variance.
+\emph{Quantile} scaling first applies a quantile transformation (mapping the marginal distribution to a standard Gaussian) and then applies standard scaling; this two-stage procedure is the most robust to the heavy tails typical of LOB features.
+In all cases, the scaler is fit on the training partition only and then applied to validation and test data, preventing information leakage across splits.
+
+\section{Detection Models}\label{sec:method:models}
+% [CONTENT] Overview: three models, each producing a scalar anomaly score
+% per time step. The models are complementary: one operates in latent space,
+% one estimates a conditional density, one uses reconstruction error with
+% contamination robustness.
+
+\subsection{Transformer Bottleneck Autoencoder + One-Class SVM}\label{sec:method:models:tae_ocsvm}
+% [CONTENT] Architecture: input $(B, S, d)$ $\to$ linear embedding to
+% $d_{\text{model}}$ $\to$ sinusoidal positional encoding $\to$
+% $L$-layer Transformer encoder $\to$ flatten $\to$ bottleneck linear
+% $\to$ $\mathbf{z} \in \mathbb{R}^{d_{\text{rep}}}$ $\to$ expand $\to$
+% Transformer decoder $\to$ output $(B, S, d)$. Training loss: MSE
+% reconstruction. After training, encode all training data to latent space;
+% fit a Nystr\"om-approximated OC-SVM with RBF kernel. Anomaly score:
+% negated decision function $-f(\mathbf{z})$.
+
+\paragraph{Nystr\"om Approximation and SGD Training.}
+% [CONTENT] Describe the Nystr\"om kernel approximation:
+% sample $m$ landmarks, compute $K_{ZZ}$, normalisation
+% $U S^{-1/2}$, feature map $\phi(x) = K(x, Z) \cdot U S^{-1/2}$.
+% Linear OC-SVM objective:
+% $\min_{w,\rho} \frac{1}{2}\|w\|^2 - \rho + \frac{1}{\nu n}\sum_i [-(w^\top \phi(x_i) - \rho)]_+$.
+% Trained via SGD on GPU. Rho set as the $\nu$-quantile of projections (KKT).
+% Gamma set via the median heuristic: $\gamma = 1/\text{median}(\|z_i - z_j\|^2)$.
+
+\subsection{Probabilistic Neural Network}\label{sec:method:models:pnn}
+% [CONTENT] Architecture: flatten $(S \times d)$ $\to$ one hidden layer
+% (64 units, ReLU) $\to$ 3 outputs $(\mu, \sigma_{\text{raw}}, \alpha)$.
+% $\sigma = \text{Softplus}(\sigma_{\text{raw}}) + \epsilon$. The target is
+% the next-step scaled log return. Loss: skew-normal NLL
+% $-\log\left(\frac{2}{\sigma}\phi(z)\Phi(\alpha z)\right)$
+% where $z = (y - \mu)/\sigma$, $\phi$ is the standard normal PDF, $\Phi$
+% the CDF. Anomaly score: the NLL itself (high NLL = poor fit = anomaly).
+
+\subsection{Probabilistic Robust Autoencoder}\label{sec:method:models:prae}
+% [CONTENT] Architecture: same Transformer backbone as the
+% Transformer+OC-SVM, but wrapped in the PRAE framework. Each training
+% sample $i$ has a learnable gate parameter $\mu_i$. During training,
+% $z_i = \text{clamp}(\mu_i + \epsilon_i, 0, 1)$ with $\epsilon_i \sim
+% \mathcal{N}(0, \sigma^2)$. Loss:
+% $\mathcal{L} = \sum_i z_i \|x_i - \hat{x}_i\|^2 - \lambda \sum_i \mathbb{E}[z_i]$
+% where $\mathbb{E}[z_i]$ is computed analytically from the truncated
+% Gaussian. The regulariser pushes gates toward 1 (normal); high
+% reconstruction error pushes them toward 0 (anomalous). At test time,
+% gates are absent: the anomaly score is the per-sample reconstruction error.
+
+\paragraph{Lambda Tuning.}
+% [CONTENT] On the first training day, compute a heuristic lambda from the
+% average input energy. Run a grid search over factors
+% $\{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0\} \times \lambda_{\text{heuristic}}$,
+% training a fresh PRAE for 15 epochs each, selecting the factor that
+% minimises validation reconstruction loss.
+
+\section{Anomaly Thresholding}\label{sec:method:thresholds}
+% [CONTENT] Overview: raw anomaly scores must be converted to binary
+% classifications. In the unsupervised setting without labels, the threshold
+% must be determined from the score distribution itself.
+
+\subsection{Peak Over Threshold}\label{sec:method:thresholds:pot}
+% [CONTENT] Set initial threshold $t$ at the 98th percentile. Compute
+% exceedances $y_i = s_i - t$ for $s_i > t$. Fit GPD parameters
+% $(\gamma, \sigma)$ via Grimshaw's MLE. Compute the anomaly threshold
+% $z_q$ for risk level $q$:
+% $z_q = t + \frac{\sigma}{\gamma}\left[\left(\frac{qN}{N_t}\right)^{-\gamma} - 1\right]$.
+
+\subsection{SPOT and DSPOT}\label{sec:method:thresholds:spot}
+% [CONTENT] SPOT: streaming extension of POT that updates the GPD fit as
+% new peaks arrive. DSPOT: adds drift correction by maintaining a sliding
+% window of recent normal values and subtracting the local mean before
+% applying SPOT. Define the depth parameter and the re-estimation rule.
+
+\subsection{Rolling False Discovery Rate}\label{sec:method:thresholds:rfdr}
+% [CONTENT] Alternative non-EVT method: maintain a rolling window of scores,
+% log-transform, compute robust z-scores (MAD-based), derive p-values under
+% a Gaussian assumption, apply the Benjamini-Hochberg procedure at level
+% $\alpha$. The threshold is the score corresponding to the largest p-value
+% below the BH line.
+
+\section{Spoofing Gain Estimation}\label{sec:method:spoofing}
+% [CONTENT] From Fabre \& Challet (2025): define the expected cost of a
+% trade with and without spoofing. A rational spoofer places a genuine order
+% of size $q$ at distance $\delta_a$ and a spoof order of size $Q$ at
+% distance $\delta_b$ on the opposite side. The spoofing gain is
+% $\Delta\mathcal{C} = \mathbb{E}[C(0, \delta_a, 0, q) \mid x_0] - \mathbb{E}[C(\delta_b, \delta_a, Q, q) \mid x]$.
+% The conditional expectations use the PNN-predicted skew-normal parameters
+% and involve CDF evaluations and conditional moments. State the formulas for
+% $P(\text{fill})$, $\mathbb{E}[\Delta p \mid \Delta p > \text{thresh}]$, and
+% the four cost terms. Positive gain means spoofing is profitable at that
+% point in time.
+
+\section{Interpretability}\label{sec:method:interpretability}
+
+\subsection{Integrated Gradients}\label{sec:method:interp:ig}
+% [CONTENT] Given a model $f$, an input $x$, and a baseline $x'$ (zeros),
+% the attribution for feature $i$ is
+% $\text{IG}_i(x) = (x_i - x'_i) \int_0^1 \frac{\partial f(x' + \alpha(x - x'))}{\partial x_i}\,d\alpha$.
+% Approximated with $n=50$ Riemann steps. For PNN, the target function is
+% $\sigma$ (scale parameter); for PRAE, it is the reconstruction error.
+% Discuss why IG satisfies completeness and sensitivity.
+
+\subsection{Grouped Occlusion}\label{sec:method:interp:occlusion}
+% [CONTENT] For the Transformer+OC-SVM detector, end-to-end gradients cannot
+% flow through the OC-SVM. Instead, features are grouped (by type, by
+% bid/ask side, by level) and each group is replaced with its mean value.
+% The anomaly score drop $\Delta s = s(x) - s(\text{mask}(x, \mathcal{G}))$
+% measures the group's contribution. Describe the batched implementation
+% (original + one ablation per group in a single forward pass).
+
+\section{Post-Hoc Analysis}\label{sec:method:posthoc}
+
+\subsection{Anomaly Clustering}\label{sec:method:posthoc:clustering}
+% [CONTENT] MinMax-normalise the three anomaly scores (OC-SVM, PNN gain,
+% PRAE reconstruction error). Select events flagged by at least one model.
+% Apply HDBSCAN with minimum cluster size proportional to anomaly count.
+% Evaluate with Silhouette score and Davies-Bouldin index. Profile each
+% cluster by dominant model, dominant time period, and top discriminating
+% features. PCA projection for visualisation.
+
+\subsection{Jump Analysis}\label{sec:method:posthoc:jumps}
+% [CONTENT] For each selected anomaly, extract a window of $\pm k$ events.
+% Compute: (a) Barndorff-Nielsen bipower variation to separate continuous
+% volatility from jumps, (b) Lo-MacKinlay variance ratio test, (c) CUSUM
+% change-point detection on feature trajectories, (d) Welch t-test comparing
+% feature distributions before vs.\ after the anomaly, (e) cross-feature
+% lead-lag correlation.
 
 
 % ==============================================================================
-% SECTION : RESULTS
+% CHAPTER 4: DATA AND EXPERIMENTAL SETUP
 % ==============================================================================
-\section{Results}
+\chapter{Data and Experimental Setup}\label{chap:data}
+
+\section{Dataset Description}\label{sec:data:dataset}
+% [CONTENT] Describe the TOTF.PA (TotalEnergies, Euronext Paris) LOB dataset.
+% 10-level snapshots (bid and ask prices and volumes at levels 1--10) with
+% timestamps in Excel serial-date format. Three calendar periods: 2009
+% ($\sim$260 trading days), 2010 ($\sim$260 days), 2015 (25 days, January--
+% February), 2017 ($\sim$70 days, January--April). Continuous trading session:
+% 09:00--17:30 CET. State the approximate number of events per day.
+
+\section{Preprocessing Pipeline}\label{sec:data:preprocessing}
+% [CONTENT] Column alignment fix (raw CSV artefacts), numeric coercion,
+% chronological sorting, market hours filtering. Feature engineering
+% (Section~\ref{sec:method:features}) applied per day. Warmup trim (3000
+% rows). Quantile clipping and zero-variance column removal. Output: one
+% Parquet file per trading day containing xltime, raw LOB columns, and
+% engineered features.
+
+\section{Training Protocol}\label{sec:data:training}
+% [CONTENT] Sequential day-by-day training: for each of the first $N-12$
+% days, use the first hour of market data (09:00--10:00). Split the first
+% hour into alternating 5-minute blocks (train/val/train/val...).
+% Models carry over weights from the previous day (continual learning).
+% Scaler fitted on the first day only and reused for all subsequent days.
+% Two independent training runs: one on 2015 data, one on 2017 data.
+
+\subsection{Model Hyperparameters}\label{sec:data:hyperparams}
+% [CONTENT] Table summarising all hyperparameters:
+% Transformer: $d_{\text{model}}=64$, heads$=4$, layers$=2$,
+% $d_{\text{rep}}=128$. PNN: hidden$=64$. PRAE: $\sigma=0.5$, $\lambda$
+% tuned via grid search. OC-SVM: $\nu=0.01$, $m=300$ Nystr\"om components,
+% SGD with lr$=0.01$ for 500 epochs. Sequence length$=25$. Batch size$=64$.
+% Adam optimiser, lr$=10^{-4}$, early stopping patience$=20$.
+
+\section{Test Protocol}\label{sec:data:test}
+% [CONTENT] Test files: last 3 days of 2015, last 6 days of 2017, 6 days
+% from 2009, 6 days from 2010 (selected as first/last 3 of available data).
+% Test scoring uses the full trading day (09:00--17:30), not just the first
+% hour. Three threshold/classification methods paired with the models:
+% OC-SVM decision function for Transformer+OC-SVM, spoofing gain $> 0$ for
+% PNN, RFDR ($w=500$, $\alpha=0.05$) for PRAE. Cross-year evaluation:
+% 2015-trained models tested on 2017 and 2009/2010 data, and vice versa.
+
+\section{Compute Environment}\label{sec:data:compute}
+% [CONTENT] Training on the Ruche HPC cluster (Universit\'e Paris-Saclay):
+% GPU nodes. PyTorch with CUDA 12.1. State approximate training time per
+% model. Local analysis on CPU for notebooks.
 
 
 % ==============================================================================
-% SECTION : CONCLUSION AND DISCUSSION
+% CHAPTER 5: RESULTS
 % ==============================================================================
-\section{Conclusion and Discussion}
+\chapter{Results}\label{chap:results}
+
+\section{Model Diagnostics}\label{sec:results:diagnostics}
+% [CONTENT] Report key internal diagnostics for each model after training.
+
+\subsection{Transformer + OC-SVM}\label{sec:results:diag:tae}
+% [CONTENT] Latent-space statistics: mean, variance, and dimensionality of
+% the bottleneck representations. RBF kernel calibration: verify that typical
+% kernel values $K(z_i, z_j)$ are in a discriminative range (not collapsed
+% to 0 or 1). Median-heuristic gamma value. OC-SVM rho and weight norm.
+% Figure: histogram of training decision function values.
+
+\subsection{PNN}\label{sec:results:diag:pnn}
+% [CONTENT] Distribution of predicted $\mu$, $\sigma$, $\alpha$ on training
+% and test data. Verify that $\sigma$ does not collapse to near-zero. Compare
+% predicted skewness $\alpha$ distribution across periods. NLL score
+% distribution.
+
+\subsection{PRAE}\label{sec:results:diag:prae}
+% [CONTENT] Distribution of learned gate parameters $\mu_i$ after training.
+% Fraction of training samples identified as anomalous ($\mu_i < 0.1$).
+% Reconstruction error distribution for gated-in vs.\ gated-out samples.
+% Figure: histogram of $\mu$ values.
+
+\section{Anomaly Detection on Test Data}\label{sec:results:detection}
+
+\subsection{Anomaly Rates by Model and Time Period}\label{sec:results:detection:rates}
+% [CONTENT] Table: anomaly rate (\%) for each model $\times$ time-of-day
+% period (first hour, rest of morning, afternoon, American open). Bar chart
+% comparison. Discuss which periods are most anomalous and whether the
+% pattern is consistent across 2015 vs.\ 2017 training.
+
+\subsection{Score Time Series}\label{sec:results:detection:timeseries}
+% [CONTENT] Figures: anomaly score time series for each model on a
+% representative test day, with period shading and detected anomalies in red.
+% Three subplots (one per model) sharing the same time axis.
+
+\subsection{Model Agreement}\label{sec:results:detection:agreement}
+% [CONTENT] Venn diagram / bar chart: fraction of anomalies detected by
+% 1, 2, or all 3 models. Pairwise overlap rates. Discuss whether high-
+% agreement events are qualitatively different from single-model detections.
+
+\section{Threshold Comparison}\label{sec:results:thresholds}
+% [CONTENT] Heatmap: anomaly rate for each model $\times$ threshold method
+% (Percentile-95, mean+3$\sigma$, POT, DSPOT, RFDR). Per-period bar charts.
+% Score distribution histograms with threshold positions overlaid.
+% Discuss sensitivity to threshold choice and recommend a default.
+
+\section{Spoofing Gain Analysis}\label{sec:results:spoofing}
+% [CONTENT] Distribution of PNN-predicted spoofing gain $\Delta\mathcal{C}$
+% across test data. Fraction of events with positive gain (profitable
+% spoofing). Analyse whether high-gain events coincide with anomalies
+% detected by the other two models. Sensitivity to spoofing parameters
+% ($Q$, $\delta_b$, fees).
+
+\section{Sensitivity and Feature Attribution}\label{sec:results:sensitivity}
+
+\subsection{Integrated Gradients: PNN and PRAE}\label{sec:results:sensitivity:ig}
+% [CONTENT] Bar charts: top-20 features by mean absolute IG attribution for
+% PNN (target: $\sigma$) and PRAE (target: reconstruction error). Compare
+% the two rankings. Identify which feature families dominate (Hawkes, OFI,
+% imbalance, rapidity).
+
+\subsection{Grouped Occlusion: Transformer + OC-SVM}\label{sec:results:sensitivity:occlusion}
+% [CONTENT] Bar charts: group importance (score drop when a feature group
+% is occluded) by feature type and by bid/ask side. Discuss which feature
+% groups are most critical for the OC-SVM decision.
+
+\subsection{Cross-Model Feature Importance}\label{sec:results:sensitivity:cross}
+% [CONTENT] Side-by-side comparison of top-15 features as ranked by PNN IG,
+% PRAE IG, and Transformer occlusion. Identify features that are consistently
+% important across models (consensus features) vs.\ model-specific drivers.
+
+\section{Anomaly Clustering}\label{sec:results:clustering}
+% [CONTENT] HDBSCAN cluster count, Silhouette score, Davies-Bouldin index.
+% PCA scatter plots coloured by cluster. Cluster profile table: size, mean
+% scores, detection rate per model, dominant time period, dominant feature
+% family, interpretation label (spoofing-type, general OC-SVM/PRAE, mixed).
+% Compare cluster structures between 2015-trained and 2017-trained models.
+
+\section{Jump Analysis}\label{sec:results:jumps}
+% [CONTENT] Aggregate table: for selected anomalies, report price jump (\%),
+% spread change, volume change, imbalance shift, BN jump ratio, and max
+% absolute return at $t+5$. Model score heatmap for the selected anomalies.
+% Compare jump magnitudes grouped by model agreement level (1/3 vs.\ 2/3
+% vs.\ 3/3). LOB snapshot triptych (before/at/after) for representative
+% events.
+
+\section{Cross-Year Robustness}\label{sec:results:crossyear}
+% [CONTENT] Compare anomaly rates and cluster structures when 2015-trained
+% models are applied to 2009, 2010, and 2017 data, vs.\ 2017-trained models
+% applied to the same periods. Discuss whether the pipeline detects
+% consistent patterns across market regimes.
 
 
 % ==============================================================================
-% SECTION : BIBLIOGRAPHY
+% CHAPTER 6: DISCUSSION
+% ==============================================================================
+\chapter{Discussion}\label{chap:discussion}
+
+\section{Limitations}\label{sec:discussion:limitations}
+% [CONTENT] (1) No ground truth: all anomaly rates are relative, not
+% absolute. (2) Single asset (TOTF.PA): results may not generalise to less
+% liquid stocks, other exchanges, or different asset classes. (3) Training
+% on first hour only: the learned normality model may not fully capture
+% afternoon/American-open dynamics. (4) Sequential training with fixed
+% scaler: potential distribution shift across days. (5) PNN is a single
+% hidden layer; deeper architectures were not explored.
+
+\section{Comparison of Detection Approaches}\label{sec:discussion:comparison}
+% [CONTENT] Discuss the complementarity of the three models. The
+% Transformer+OC-SVM captures distributional anomalies in latent space; the
+% PNN detects events where the predicted price distribution deviates from
+% observed moves; the PRAE is robust to contamination and captures
+% reconstruction-level anomalies. Consensus events (3/3 agreement) are the
+% most convincing candidates; single-model detections may include model-
+% specific false positives.
+
+\section{Interpretation of Detected Anomalies}\label{sec:discussion:interpretation}
+% [CONTENT] Connect cluster profiles and jump analysis results to known
+% manipulation signatures. Clusters dominated by Hawkes and cancel rapidity
+% features align with spoofing/layering. Clusters dominated by volume and
+% spread features may correspond to legitimate large trades or news events.
+% Discuss the difficulty of distinguishing manipulation from rare but
+% legitimate activity without labelled data.
+
+
+% ==============================================================================
+% CHAPTER 7: CONCLUSION
+% ==============================================================================
+\chapter{Conclusion}\label{chap:conclusion}
+
+\section{Summary of Contributions}\label{sec:conclusion:summary}
+% [CONTENT] Restate the six contributions from Section~\ref{sec:intro:contributions}
+% and summarise the key findings.
+
+\section{Future Work}\label{sec:conclusion:future}
+% [CONTENT] Concrete directions: (1) apply the pipeline to multiple assets
+% and exchanges (cross-asset transfer); (2) incorporate message-level data
+% (order IDs) for finer event classification; (3) explore deeper PNN
+% architectures or attention-based density estimators; (4) online continual
+% training with automatic drift detection; (5) extend to cryptocurrency
+% markets where manipulation is more prevalent; (6) calibrate threshold
+% methods against synthetic spoofing injections in an agent-based simulator.
+
+
+% ==============================================================================
+% BIBLIOGRAPHY
 % ==============================================================================
 \printbibliography
 
 
 % ==============================================================================
-% SECTION : APPENDIX
+% APPENDIX
 % ==============================================================================
-% \newpage
-% \appendix
-% \section{Appendix: Appendix section}\label{sec:appendix}
+\newpage
+\appendix
+
+\chapter{Feature Catalogue}\label{app:features}
+% [CONTENT] Full table listing all $\sim$80 engineered features with name,
+% formula, feature family, and source reference. This table is generated
+% from the feature_names lists saved in results/.
+
+\chapter{Hyperparameter Tables}\label{app:hyperparams}
+% [CONTENT] Complete hyperparameter listings for all models, thresholds,
+% and preprocessing steps. Include the PRAE lambda grid search results.
+
+\chapter{Additional Figures}\label{app:figures}
+
+\section{Score Distributions per Test Day}\label{app:figures:scores}
+% [CONTENT] One figure per test day showing the score distributions for
+% each model with threshold lines.
+
+\section{LOB Snapshots for Selected Anomalies}\label{app:figures:lob}
+% [CONTENT] Full 10-level LOB snapshots (before/at/after) for anomalies
+% discussed in Section~\ref{sec:results:jumps}.
+
+\section{Feature Evolution Around Anomalies}\label{app:figures:features}
+% [CONTENT] Top-8 features by z-score for selected anomalies, plotted with
+% normal $\pm 2\sigma$ bands.
+
+\chapter{Threshold Method Details}\label{app:thresholds}
+% [CONTENT] Grimshaw MLE derivation for GPD parameters. SPOT/DSPOT update
+% rules with pseudocode. RFDR log-transform and MAD-based z-score details.
+
+\chapter{Spoofing Gain Derivation}\label{app:spoofing}
+% [CONTENT] Full derivation of the expected cost formulas (Fabre \& Challet,
+% Equations 27--37). Conditional expectation of the skew-normal distribution.
+% Vectorised implementation notes.
 
 
 \end{document}

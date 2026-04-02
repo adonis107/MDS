@@ -1,0 +1,20 @@
+# Folders 
+.venv/
+__pycache__/
+lectures/
+
+# Files
+*.pyc
+*.npy
+*.docx
+individual assignment/2526_RL_Assignment_CS3A.pdf
+
+# Latex
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.out
+*.synctex.gz
+*.log

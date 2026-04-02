@@ -1,0 +1,9 @@
+gymnasium
+hydra-core
+ipympl
+matplotlib
+moviepy
+numpy
+opencv-python-headless
+stable-baselines3[extra]
+wandb

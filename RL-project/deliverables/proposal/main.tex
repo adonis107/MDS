@@ -1,0 +1,130 @@
+% CVPR 2026 Paper Template
+\documentclass[10pt,twocolumn,letterpaper]{article}
+
+%%%%%%%%% PAPER TYPE
+\usepackage[pagenumbers]{cvpr}
+\usepackage{bm}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{comment}
+
+% Import CVPR-recommended packages
+\input{preamble}
+
+% No blue links
+\usepackage[pagebackref,breaklinks,hidelinks]{hyperref}
+
+%%%%%%%%% PAPER ID
+\def\paperID{*****}
+\def\confName{CVPR}
+\def\confYear{2026}
+
+%%%%%%%%% TITLE
+\title{Comparative Study of Deep Reinforcement Learning Methods on the Game of Snake}
+
+%%%%%%%%% AUTHORS
+\author{
+Fotios Kapotos\\
+\and
+Adonis Jamal\\
+CentraleSup\'elec\\
+\and
+Jean-Vincent Martini\\
+}
+ 
+\begin{document}
+\maketitle
+
+\section{Motivation and Problem Definition}
+
+Reinforcement Learning (RL) has demonstrated remarkable success in sequential decision-making problems such as Atari games \cite{mnih2015human}, Go \cite{silver2016mastering}, and robotics control \cite{singh2022reinforcement}. 
+
+The Snake game presents a compelling environment for studying Reinforcement Learning (RL) due to its simple rules yet complex strategic requirements. Unlike many RL benchmarks, Snake requires agents to balance immediate rewards (food collection) with long-term survival (avoiding self-collision), making it an ideal testbed for exploring how different RL algorithms handle credit assignment and exploration-exploitation tradeoffs.
+
+The game's dynamics create several challenging scenarios: as the snake grows, the state space complexity increases, navigation becomes progressively constrained, and the agent must plan increasingly longer trajectories to avoid trapping itself. These characteristics mirror real-world sequential decision-making problems where available actions become limited over time and where greedy strategies lead to failure.
+
+Our primary objective is to conduct a systematic comparison of modern deep RL algorithms on the Snake environment, investigating how algorithmic choices, reward shaping strategies, and state representations affect learning efficiency and final performance. 
+
+\section{Related Work}
+
+Deep Q-Networks (DQN) introduced by \cite{mnih2015human} demonstrated that deep neural networks can approximate action-value functions directly from high-dimensional inputs. Extensions such as Double DQN \cite{van2016deep}  improve stability by reducing overestimation bias.
+
+Policy-gradient methods such as Proximal Policy Optimization (PPO) \cite{schulman2017proximal} and Advantage Actor-Critic (A2C) \cite{mnih2016asynchronous} provide alternative optimization strategies with improved convergence properties and robustness.
+
+Game-based RL benchmarks have historically focused on Atari environments using the Arcade Learning Environment. However, smaller grid-based environments like Snake provide a controlled setting for studying reward shaping, representation learning, and exploration strategies.
+
+Tree-search methods such as Monte Carlo Tree Search (MCTS) \cite{browne2012survey} have shown effectiveness in planning-based settings. We will optionally explore hybrid approaches combining learned policies with search-based planning.
+
+\section{Methodology}
+
+\subsection{Environment Setup}
+
+We implement the Snake game as a Gymnasium-compatible environment, allowing for standardized interaction with RL algorithms. Thanks to the implementation of our custom wapper, we can easily modify the state representation and reward structure to test different configurations. 
+
+The problem is formulated as a Markov Decision Process (MDP) defined by:
+
+\textbf{State space:} The environment will be represented under multiple state encodings. Examples include:
+\begin{itemize}
+    \item Full grid representation (raw board matrix).
+    \item Local egocentric view centered on the snake's head.
+    \item Hand-crafted feature vector (distances to walls, food direction, collision indicators).
+\end{itemize}
+
+\textbf{Action space:} Discrete actions: \{move forward, turn left, turn right\}.
+
+\textbf{Reward function:} We will compare different reward shaping strategies such as:
+\begin{itemize}
+    \item Sparse rewards (food consumption + terminal penalty).
+    \item Dense rewards (distance-based shaping, survival reward, loop penalties).
+\end{itemize}
+
+\subsection{Agents}
+
+We will implement and compare:
+
+\begin{itemize}
+    \item Deep Q-Network (DQN) \cite{mnih2015human}: Value-based method with experience replay and target networks. 
+    \item Double DQN \cite{van2016deep}: Extension of DQN that decouples action selection from evaluation to reduce overestimation bias.
+    \item Advantage Actor-Critic (A2C) \cite{mnih2016asynchronous}: On-policy algorithm combining policy gradient with value function baseline to reduce variance.
+    \item Proximal Policy Optimization (PPO) \cite{schulman2017proximal}: Policy gradient method with clipped surrogate objective ensuring stable updates through trust region constraints.
+    \item Random Agent: Baseline that selects actions uniformly at random to assess the difficulty of the environment and the effectiveness of learning.
+\end{itemize}
+
+All neural agents will share comparable architectures to ensure fair comparison. Hyperparameters will be tuned systematically.
+
+\section{Evaluation}
+
+\textbf{Evaluation Protocol:} We will train each agent for a fixed number of episodes (e.g., 10,000) and evaluate performance using multiple random seeds to assess learning stability and generalization.
+
+\textbf{Evaluation Metrics:} We will focus on:
+\begin{itemize}
+    \item Average score (food collected)
+    \item Maximum length achieved
+    \item Survival time (number of steps before termination)
+    \item Reward value 
+    \item Sample efficiency (learning curve analysis)
+\end{itemize}
+
+\textbf{Qualitative Analysis:} We will analyze learned behaviors through visualizations of agent trajectories, action distributions, and state visitation patterns to understand how different algorithms navigate the tradeoffs inherent in the Snake environment. Results will be presented in the form of learning curves, box plots of final performance, and trajectory visualizations.
+
+\textbf{Comparaison with Tree Search:} Eventually, we will use the learned policies to explore trees in order to evaluate the potential application of RL agents to new environments. This allows us to compare the performance to more traditional methods such as Depth-First Search (DFS) and Breadth-First Search (BFS) in the same environment, providing insight into the strengths and weaknesses of learned policies versus search-based approaches.
+
+
+\section{Expected Contributions}
+
+This project aims to provide a structured empirical study of how algorithmic design choices impact performance in a constrained, progressively complex RL environment.
+
+First, we expect to provide a clear comparative analysis of value-based and policy-based methods on a growing-horizon task by evaluating DQN, Double DQN, A2C, and PPO in the Snake environment.
+
+Second, we expect to contribute an in-depth study of reward shaping in a sparse-reward environment. Snake naturally induces delayed consequences (self-trapping occurs long after a greedy decision), making it a meaningful case study for understanding how dense shaping signals affect exploration and long-term planning. 
+
+Third, by comparing multiple state representations (raw grid, local view, and hand-crafted features), we aim to provide insight into representation learning in grid-based environments.
+
+Finally, the project will result in a modular Gymnasium-compatible Snake environment and evaluation framework that supports systematic experimentation. This implementation can serve as a lightweight benchmark for studying algorithmic behavior in constrained navigation and survival-based RL tasks.
+
+{\footnotesize
+\bibliographystyle{ieeenat_fullname}
+\bibliography{bibliography}
+}
+
+\end{document}

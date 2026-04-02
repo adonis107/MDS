@@ -1,0 +1,22 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Results folder
+output/
+videos/
+logs/
+wandb
+debug*
+models/
+checkpoints
+deliverables/poster/*
+deliverables/report/*
+!deliverables/report/report.tex

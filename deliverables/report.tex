@@ -351,7 +351,7 @@ The trade-off is lower resolution: it identifies which feature families matter, 
 
 \section{Feature Engineering}\label{sec:methodology:features}
 
-The raw limit order book data for TOTF.PA (TotalEnergies, Euronext Paris) records the state of the book at each update event during continuous trading hours (09:00--17:30 CET).
+The raw limit order book data for TOTF.PA (TotalEnergies, Euronext Paris) records the state of the book at each update event during continuous trading hours (09:00-17:30 CET).
 Each row contains an Excel serial timestamp $t$ (column \texttt{xltime}, where the fractional part encodes the time of day) and the price and volume at $L = 10$ levels on each side: $p^b_1, V^b_1, \ldots, p^b_{10}, V^b_{10}$ for the bid and $p^a_1, V^a_1, \ldots, p^a_{10}, V^a_{10}$ for the ask, giving 41 columns per row.
 The data is event-driven: a new row is recorded whenever a limit order, cancellation, or trade modifies the visible book state, so the inter-event spacing is irregular.
 
@@ -674,11 +674,9 @@ The Adam optimiser~\cite{kingma2014adam} is used with a learning rate of $\eta =
 Training proceeds for up to $E = 1{,}000$ epochs per day with early stopping on the validation loss (patience $P = 20$ epochs).
 Gradient norms are clipped to 1.0 to prevent instability.
 
-\paragraph{Divergences from Poutr\'e et~al.}
-The architecture parameters differ from those of Poutr\'e et~al.~\cite{poutre_2024}, who use $h = 8$ attention heads, a feedforward dimension $d_{\text{ff}} = 512$, and $N = 6$ Transformer layers, following Vaswani et~al.~\cite{vaswani2017attention}.
-Our implementation uses $h = 4$, $d_{\text{model}} = 64$ (with the default feedforward dimension $d_{\text{ff}} = 2{,}048$ from PyTorch's \texttt{TransformerEncoderLayer}), and $N = 2$, resulting in a substantially smaller model.
-This reduction was necessary because the TOTF.PA dataset is smaller than the five-stock LOBSTER dataset used in the original paper, and the larger architecture overfitted in preliminary experiments.
-The representation dimension ($d_{\text{rep}} = 128$) and the sequence length ($k = 25$) match the paper.
+\paragraph{Architecture parameters.}
+The architecture follows Poutr\'e et~al.~\cite{poutre_2024}, who set the hyperparameters similarly to Vaswani et~al.~\cite{vaswani2017attention}: $h = 8$ attention heads, a feedforward dimension $d_{\text{ff}} = 4d = 512$, $N = 6$ Transformer encoder/decoder layers, and a representation dimension $d_{\text{rep}} = d_{\text{model}} = d = 128$.
+The sequence length ($k = 25$) also matches the original paper.
 
 \paragraph{One-Class SVM on bottleneck representations.}
 After the autoencoder is trained, the encoder is frozen and used to map every training subsequence to its bottleneck vector $\mathbf{z}_t \in \mathbb{R}^{d_{\text{rep}}}$.
@@ -712,8 +710,8 @@ This differs from Poutr\'e et~al.~\cite{poutre_2024}, who use $\gamma = 10 / (d_
 
 \subsubsection{Nystr\"om Approximation and SGD Training}\label{subsubsec:models:nystrom}
 
-The Nystr\"om kernel approximation is a computational adaptation introduced in this project; it does not appear in Poutr\'e et~al.~\cite{poutre_2024}, who use the standard quadratic-programming solver from scikit-learn.
-The adaptation is motivated by scalability: a standard kernel SVM requires computing and storing an $n \times n$ kernel matrix, which is infeasible when $n$ exceeds $10^5$ training subsequences.
+The Nystr\"om kernel approximation does not appear in the paper of Poutr\'e et~al.~\cite{poutre_2024}, but it is the method used in their publicly available source code.
+The motivation is scalability: a standard kernel SVM requires computing and storing an $n \times n$ kernel matrix, which is infeasible when $n$ exceeds $10^5$ training subsequences.
 The Nystr\"om method approximates the kernel matrix using a random subset of $m \ll n$ landmark points, reducing memory from $O(n^2)$ to $O(nm)$ and enabling GPU-accelerated training.
 
 The approximation proceeds as follows.
@@ -748,9 +746,10 @@ The number of Nystr\"om landmarks is set to $m = 300$; this value was chosen to 
 \textbf{Parameter} & \textbf{Symbol} & \textbf{Value} & \textbf{Source} \\
 \midrule
 Sequence length & $k$ & 25 & Poutr\'e et~al.~\cite{poutre_2024} \\
-Model dimension & $d_{\text{model}}$ & 64 & Empirical \\
-Attention heads & $h$ & 4 & Empirical \\
-Transformer layers & $N$ & 2 & Empirical \\
+Model dimension & $d_{\text{model}}$ & 128 & Poutr\'e et~al.~\cite{poutre_2024} \\
+Attention heads & $h$ & 8 & Poutr\'e et~al.~\cite{poutre_2024} \\
+Feedforward dimension & $d_{\text{ff}}$ & 512 & Poutr\'e et~al.~\cite{poutre_2024} \\
+Transformer layers & $N$ & 6 & Poutr\'e et~al.~\cite{poutre_2024} \\
 Representation dimension & $d_{\text{rep}}$ & 128 & Poutr\'e et~al.~\cite{poutre_2024} \\
 Training loss & --- & MSE (Frobenius) & Poutr\'e et~al.~\cite{poutre_2024} \\
 Optimiser & --- & Adam & Poutr\'e et~al.~\cite{poutre_2024} \\
@@ -901,10 +900,10 @@ When $\mu_i$ is large and positive, $z_i \approx 1$ and the sample contributes f
 Following the $\ell_1$ relaxation of Lindenbaum et~al.~\cite{lindenbaum2022prae} (their Equation~5), the training objective is:
 \begin{equation}
   \label{eq:prae_loss}
-  \mathcal{L}_{\text{PRAE}} = \frac{1}{|\mathcal{B}|}\sum_{i \in \mathcal{B}} z_i \left\|\mathbf{S}_i - \hat{\mathbf{S}}_i\right\|^2 - \lambda \cdot \frac{1}{|\mathcal{B}|}\sum_{i \in \mathcal{B}} \mathbb{E}[z_i],
+  \mathcal{L}_{s} = \mathbb{E} \left( \sum_i z[i] \|x_i - \hat{x}_i \|_2^2 - \lambda \|z\|_s\right) \quad s \in \{0, 1\},
 \end{equation}
 where the first term is a Monte Carlo estimate of the gated reconstruction error (using the sampled $z_i$) and the second term is the regulariser that encourages including more samples.
-The expected gate value $\mathbb{E}[z_i]$ is computed analytically from the truncated Gaussian distribution of $z_i$ given $\mu_i$ and $\sigma$:
+The expected gate value $\mathbb{E}[z_i]$ is computed analytically from the truncated Gaussian distribution of $z_i$ given $\mu_i$ and $\sigma$ (derived in the proof of Theorem~4.1 by Lindenbaum et~al.~\cite{lindenbaum2022prae}):
 \begin{equation}
   \label{eq:expected_gate}
   \mathbb{E}[z_i] = \frac{\sigma}{\sqrt{2\pi}}\left(e^{-\mu_i^2/(2\sigma^2)} - e^{-(1-\mu_i)^2/(2\sigma^2)}\right) + (\mu_i - 1)\,\Phi\!\left(\frac{1-\mu_i}{\sigma}\right) - \mu_i\, \Phi\!\left(\frac{-\mu_i}{\sigma}\right) + 1,
@@ -925,17 +924,20 @@ The backbone weights are carried over from the previous day.
 
 \subsubsection{Lambda Tuning}\label{subsubsec:models:lambda}
 
-The PRAE paper~\cite{lindenbaum2022prae} does not prescribe a specific $\lambda$ selection procedure; it treats $\lambda$ as a hyperparameter to be set based on a contamination-level estimate.
-Our implementation uses a two-stage approach.
+Lindenbaum et~al.~\cite{lindenbaum2022prae} propose two unsupervised schemes for tuning $\lambda$ (their Section~5.2).
+The first is a mean-energy heuristic: compute $\mathrm{ME} = \frac{1}{N}\sum_{i=1}^{N}\|x_i\|_2^2$ and set $\lambda < \mathrm{ME}$, since any $\lambda > \mathrm{ME}$ would cause the model to include outliers.
+The second is validation-based: select the $\lambda$ that minimises reconstruction loss on held-out samples.
+In their experiments they set $\lambda = 1 < \mathrm{ME}$; however, they note that a rigorous scheme for finding the optimal $\lambda$ remains an open question.
 
-On the first training day, an initial $\lambda_{\text{heuristic}}$ is computed from the average energy of the training data:
+Our implementation combines both schemes.
+On the first training day, a mean-energy estimate $\lambda_{\text{heuristic}}$ is computed from a sample of training batches:
 \begin{equation}
   \label{eq:lambda_heuristic}
   \lambda_{\text{heuristic}} = \overline{\|\mathbf{x}\|^2} \cdot k \cdot d,
 \end{equation}
-where $\overline{\|\mathbf{x}\|^2}$ is the mean squared magnitude per element over a sample of training batches.
+where $\overline{\|\mathbf{x}\|^2}$ is the mean squared magnitude per element, and scaling by the sequence length $k$ and feature dimension $d$ recovers the mean total energy per sample (i.e.\ $\mathrm{ME}$).
 A grid search is then run over the multiplicative factors $\{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0\}$, training a fresh PRAE for 15 epochs for each candidate $\lambda = f \cdot \lambda_{\text{heuristic}}$.
-The factor that minimises the validation reconstruction loss (without gates) is selected.
+The factor that minimises the validation reconstruction loss (without gates) is selected, following the paper's second tuning scheme.
 
 On subsequent training days (day 2 onward), the backbone is already partially trained, so the raw-energy heuristic overestimates the reconstruction scale.
 The selected $\lambda$ from day 1 is retained for all subsequent days without re-tuning.
@@ -960,7 +962,7 @@ High values indicate that the input deviates from the learned reconstruction man
 Backbone & --- & Bottleneck Transformer (Table~\ref{tab:tae_ocsvm_hyperparams}) & Empirical \\
 Gate noise scale & $\sigma$ & 0.5 & Lindenbaum et~al.~\cite{lindenbaum2022prae} \\
 Gate initialisation & $\mu_i$ & 0.5 & Empirical \\
-$\lambda$ selection & --- & Grid search (7 factors $\times$ 15 epochs) & Empirical \\
+$\lambda$ selection & --- & Grid search (7 factors $\times$ 15 epochs) & Adapted from~\cite{lindenbaum2022prae} \\
 Reconstruction clamp & --- & $10^6$ & Empirical \\
 Optimiser & --- & Adam & Empirical \\
 Learning rate & $\eta$ & $10^{-4}$ & Empirical \\
@@ -972,29 +974,193 @@ Batch size & $|\mathcal{B}|$ & 64 & Empirical \\
 \end{table}
 
 \section{Anomaly Thresholding}\label{sec:method:thresholds}
-% [CONTENT] Overview: raw anomaly scores must be converted to binary
-% classifications. In the unsupervised setting without labels, the threshold
-% must be determined from the score distribution itself.
+
+Each detection model outputs a scalar anomaly score $s_t \in \mathbb{R}$ at every time step $t$.
+A detection is triggered when $s_t$ exceeds a threshold $\tau_t$, producing the binary indicator $\mathbf{1}[s_t > \tau_t]$.
+The choice of $\tau_t$ governs the trade-off between false positives and detection power.
+A fixed threshold is inadequate because anomaly score distributions are non-stationary: volatility regimes shift within and across sessions, market microstructure changes between instruments, and the score baselines of different models drift over time.
+The three methods below address this from different angles: static extreme value fitting (POT), streaming extreme value updating (SPOT, DSPOT), and rolling multiple-testing control (RFDR).
+Throughout, $s_t$ denotes the anomaly score at time $t$ and $\tau_t$ denotes the (possibly time-varying) threshold.
 
 \subsection{Peak Over Threshold}\label{sec:method:thresholds:pot}
-% [CONTENT] Set initial threshold $t$ at the 98th percentile. Compute
-% exceedances $y_i = s_i - t$ for $s_i > t$. Fit GPD parameters
-% $(\gamma, \sigma)$ via Grimshaw's MLE. Compute the anomaly threshold
-% $z_q$ for risk level $q$:
-% $z_q = t + \frac{\sigma}{\gamma}\left[\left(\frac{qN}{N_t}\right)^{-\gamma} - 1\right]$.
+
+\paragraph{Theoretical foundation.}
+The Pickands-Balkema-de Haan theorem~\cite{balkema1974residual,pickands1975statistical} guarantees that, for a wide class of distributions, the excess of a random variable above a sufficiently high threshold~$u$ converges in distribution to a Generalised Pareto Distribution (GPD).
+Concretely, if $Y = X - u \mid X > u$, then for large~$u$:
+\begin{equation}
+  \label{eq:gpd}
+  F_{\xi,\sigma}(y) = 1 - \left(1 + \xi\,\frac{y}{\sigma}\right)^{-1/\xi}, \qquad y > 0, \quad 1 + \xi\,\frac{y}{\sigma} > 0,
+\end{equation}
+where $\xi \in \mathbb{R}$ is the shape (extreme value index) and $\sigma > 0$ is the scale.
+When $\xi > 0$ the tail is heavy (Fr\'{e}chet domain); when $\xi < 0$ the tail is bounded (Weibull domain).
+In the limiting case $\xi = 0$ the GPD reduces to the exponential distribution
+$F_{0,\sigma}(y) = 1 - \mathrm{e}^{-y/\sigma}$.
+
+\paragraph{Parameter estimation.}
+The parameters $(\xi, \sigma)$ are estimated by maximum likelihood from the empirical exceedances above $u$.
+The log-likelihood for $N_u$ observed exceedances $y_1, \ldots, y_{N_u}$ is:
+\begin{equation}
+  \label{eq:gpd_loglik}
+  \ell(\xi, \sigma) = -N_u \ln \sigma - \left(1 + \frac{1}{\xi}\right)\sum_{i=1}^{N_u} \ln\!\left(1 + \frac{\xi}{\sigma}\,y_i\right).
+\end{equation}
+Grimshaw's trick~\cite{siffer:hal-01640325} reduces this two-variable optimisation to a single-variable root search.
+Defining $x = \xi / \sigma$ and the auxiliary functions
+$u(x) = \frac{1}{N_u}\sum_i (1 + x\,y_i)^{-1}$ and
+$v(x) = 1 + \frac{1}{N_u}\sum_i \ln(1 + x\,y_i)$,
+the MLE satisfies $u(x)\,v(x) = 1$, from which $\hat{\xi} = v(x^*) - 1$ and $\hat{\sigma} = \hat{\xi} / x^*$.
+The implementation searches for roots of $w(x) = u(x)\,v(x) - 1$ in the two intervals
+$\bigl(-1/y_{\max} + \epsilon,\; -\epsilon\bigr)$ and
+$\bigl[2(\bar{y} - y_{\min})/(\bar{y}\,y_{\min}),\; 2(\bar{y} - y_{\min})/y_{\min}^2\bigr]$
+using L-BFGS-B minimisation of $\sum_k w(x_k)^2$ with $k = 10$ candidate starting points, following the procedure of Siffer et~al.~\cite{siffer:hal-01640325}.
+The candidate with the highest log-likelihood is retained, including the $\xi = 0$ case $(\hat{\sigma} = \bar{y})$.
+
+\paragraph{Initial threshold.}
+The initial threshold $u$ is set to the $q_0$-th empirical quantile of the score distribution, with $q_0 = 0.98$ as recommended by Siffer et~al.~\cite{siffer:hal-01640325}: ``In practice we set $t$ to a high empirical quantile (98\%).''
+If no exceedances exist above $u$ (i.e.\ $N_u = 0$), the implementation falls back to $\tau = u$.
+
+\paragraph{Threshold derivation.}
+Given fitted $(\hat{\xi}, \hat{\sigma})$ and a target false positive rate $q$, the detection threshold is:
+\begin{equation}
+  \label{eq:pot_threshold}
+  \tau = u + \frac{\hat{\sigma}}{\hat{\xi}} \left[\left(\frac{q\,n}{N_u}\right)^{-\hat{\xi}} - 1\right], \qquad \hat{\xi} \neq 0,
+\end{equation}
+where $n$ is the total number of observations and $N_u$ is the number of exceedances above $u$.
+When $\hat{\xi} = 0$, the threshold reduces to $\tau = u - \hat{\sigma}\,\ln(q\,n / N_u)$.
+This formula follows directly from inverting the GPD survival function at probability $q \cdot n / N_u$ and is Equation~1 of Siffer et~al.~\cite{siffer:hal-01640325}.
+
+\paragraph{Static application.}
+POT is a batch method: it fits the GPD on a fixed set of scores and produces a single threshold that does not change at inference time.
+This is appropriate when the score distribution is stationary across the calibration and test periods, but it cannot adapt to non-stationarity.
 
 \subsection{SPOT and DSPOT}\label{sec:method:thresholds:spot}
-% [CONTENT] SPOT: streaming extension of POT that updates the GPD fit as
-% new peaks arrive. DSPOT: adds drift correction by maintaining a sliding
-% window of recent normal values and subtracting the local mean before
-% applying SPOT. Define the depth parameter and the re-estimation rule.
+
+\paragraph{SPOT (Streaming Peak Over Threshold).}
+SPOT~\cite{siffer:hal-01640325} extends POT to a streaming setting by maintaining a running tail model and updating the threshold as new scores arrive.
+The algorithm proceeds as follows:
+
+\begin{enumerate}
+  \item \textbf{Initialisation.} Run the POT procedure on the first $n_{\text{init}}$ scores to obtain an initial threshold $\tau_0$ and an initial peak threshold $u$. Collect the initial exceedances $\mathcal{Y} = \{s_i - u \mid s_i > u,\; i \le n_{\text{init}}\}$.
+  \item \textbf{Streaming update.} For each subsequent score $s_t$:
+  \begin{itemize}
+    \item If $s_t > \tau_{t-1}$: flag $s_t$ as an anomaly. The peak set $\mathcal{Y}$ and $\tau$ are not updated.
+    \item If $u < s_t \le \tau_{t-1}$: add the exceedance $s_t - u$ to $\mathcal{Y}$, refit $(\hat{\xi}, \hat{\sigma})$ via Grimshaw, and recompute $\tau_t$ using Equation~\eqref{eq:pot_threshold}.
+    \item If $s_t \le u$: no update.
+  \end{itemize}
+\end{enumerate}
+
+The GPD is thus refit after every new peak, making the threshold progressively more accurate as more tail observations accumulate.
+The running observation count $k$ in the denominator of Equation~\eqref{eq:pot_threshold} is incremented for every non-anomalous observation, so the threshold accounts for the growing sample size.
+
+\paragraph{Implementation note.}
+In the implementation, the initial POT fit is computed on the full score array rather than on only the first $n_{\text{init}}$ observations.
+This means that the initial peak threshold $u$ is the 98th percentile of all scores, not just the calibration batch.
+The practical effect is a more stable $u$, but it grants the initialisation access to future information.
+The initial peak set $\mathcal{Y}$ is correctly restricted to the first $n_{\text{init}}$ observations.
+Additionally, the running counter $N$ in the threshold formula counts all observations (including flagged anomalies), whereas Algorithm~2 of Siffer et~al.\ increments $k$ only for non-anomalous observations.
+This makes the ratio $qN/N_u$ slightly larger, producing a marginally higher (more conservative) threshold.
+
+\paragraph{DSPOT (Drift SPOT).}
+DSPOT~\cite{siffer:hal-01640325} extends SPOT to non-stationary streams by applying the peak-over-threshold logic to drift-corrected scores rather than raw scores.
+The drift correction subtracts a local baseline $M_t$ estimated from a sliding window of the $d$ most recent normal (non-anomalous) observations:
+\begin{equation}
+  \label{eq:dspot_drift}
+  s'_t = s_t - M_t, \qquad M_t = \frac{1}{d}\sum_{k=1}^{d} s^*_{t-k},
+\end{equation}
+where $s^*_{t-1}, \ldots, s^*_{t-d}$ are the last $d$ non-anomalous scores.
+The drift-corrected scores $s'_t$ are assumed to come from a stationary distribution, and SPOT is run on this transformed stream.
+The effective detection threshold at time $t$ is $\tau_t = \tau'_t + M_t$, where $\tau'_t$ is the SPOT threshold in the drift-corrected space.
+
+When $s_t$ is flagged as an anomaly, the window $W^*$ is not updated and $M_{t+1} = M_t$, preventing anomalous values from contaminating the baseline estimate.
+In peak and normal cases, the oldest value in $W^*$ is replaced by $s_t$ and $M_{t+1}$ is recomputed.
+This matches Algorithm~3 of Siffer et~al.
+
+\paragraph{Implementation note.}
+In the initialisation loop of DSPOT, the local mean is computed from $d - 1$ values instead of $d$ due to an off-by-one in the slice indices.
+In the streaming phase, the window correctly maintains $d$ values.
+The effect is negligible for $d \gg 1$.
+The same counter divergence as in SPOT applies: $N$ counts all observations rather than only non-anomalous ones.
+
+\paragraph{Shared parameters.}
+Table~\ref{tab:evt_params} lists the parameters shared by POT, SPOT, and DSPOT.
+
+\begin{table}[H]
+\centering
+\caption{Parameters of the EVT-based threshold methods.}
+\label{tab:evt_params}
+\begin{tabular}{llll}
+\toprule
+\textbf{Parameter} & \textbf{Symbol} & \textbf{Value} & \textbf{Source} \\
+\midrule
+Risk level & $q$ & $10^{-4}$ & Empirical (paper uses $10^{-3}$) \\
+Initial quantile level & $q_0$ & 0.98 & Siffer et~al.~\cite{siffer:hal-01640325} \\
+Grimshaw candidates & $k$ & 10 & Siffer et~al.~\cite{siffer:hal-01640325} \\
+Numerical tolerance & $\epsilon$ & $10^{-8}$ & Empirical \\
+SPOT/DSPOT init size & $n_{\text{init}}$ & $\lfloor n/2 \rfloor$ & Empirical (paper suggests ${\sim}1000$) \\ % TODO: no systematic justification for n/2
+DSPOT window depth & $d$ & 50 & Empirical (paper uses 200) \\ % TODO: no justification for d=50; paper uses d=200 on network data
+\bottomrule
+\end{tabular}
+\end{table}
 
 \subsection{Rolling False Discovery Rate}\label{sec:method:thresholds:rfdr}
-% [CONTENT] Alternative non-EVT method: maintain a rolling window of scores,
-% log-transform, compute robust z-scores (MAD-based), derive p-values under
-% a Gaussian assumption, apply the Benjamini-Hochberg procedure at level
-% $\alpha$. The threshold is the score corresponding to the largest p-value
-% below the BH line.
+
+\paragraph{FDR control background.}
+The Benjamini-Hochberg (BH) procedure~\cite{benjamini1995controlling} controls the false discovery rate (FDR), defined as the expected proportion of false positives among all rejected hypotheses.
+Given $m$ hypothesis tests with p-values $p_{(1)} \le \cdots \le p_{(m)}$, the BH procedure rejects all hypotheses $H_{(i)}$ for which
+\begin{equation}
+  \label{eq:bh_procedure}
+  p_{(i)} \le \frac{i}{m}\,\alpha,
+\end{equation}
+where $\alpha$ is the target FDR level.
+Under independence (or positive regression dependence) of the p-values, this guarantees $\mathrm{FDR} \le \alpha$.
+
+\paragraph{Adaptation to anomaly scores.}
+Translating anomaly scores to p-values requires a null distribution for the scores.
+The implementation constructs this null from the rolling window itself, using a log-transform followed by robust z-scoring.
+Given a window of scores $\{s_{t-W+1}, \ldots, s_t\}$:
+\begin{enumerate}
+  \item \textbf{Log-transform.} Compute $\tilde{s}_i = \ln(s_i + c)$, where $c = |\min_j s_j| + 10^{-6}$ if any score is non-positive, and $c = 0$ otherwise. The log-transform reduces the skewness of heavy-tailed score distributions.
+  \item \textbf{Robust z-score.} Compute the median $\tilde{\mu} = \mathrm{med}(\tilde{s})$ and the median absolute deviation $\mathrm{MAD} = \mathrm{med}(|\tilde{s} - \tilde{\mu}|)$, then
+  \begin{equation}
+    \label{eq:rfdr_zscore}
+    z_i = \frac{\tilde{s}_i - \tilde{\mu}}{1.4826 \cdot \mathrm{MAD}},
+  \end{equation}
+  where the factor 1.4826 is the consistency constant that makes $1.4826 \cdot \mathrm{MAD}$ an unbiased estimator of the standard deviation under normality. If $\mathrm{MAD} = 0$, it is replaced by the mean absolute deviation plus $10^{-10}$.
+  \item \textbf{P-values.} Under the assumption that the null scores follow a standard normal distribution in the transformed space, the one-sided p-value is $p_i = 1 - \Phi(z_i)$, where $\Phi$ is the standard normal CDF.
+  \item \textbf{BH rejection.} Sort the $W$ p-values in ascending order and apply Equation~\eqref{eq:bh_procedure}. The score $s_t$ is flagged as anomalous if its p-value is among the rejected set. The dynamic threshold is the raw score corresponding to the largest rejected p-value.
+\end{enumerate}
+
+No decisions are made until the window contains at least 20 observations, ensuring a minimum sample size for stable z-score estimation.
+
+\paragraph{Rolling window mechanics.}
+The window is a first-in, first-out buffer of fixed length $W$.
+At each time step, the newest score enters the window, the oldest is discarded, and the full BH procedure is reapplied.
+The null distribution is therefore re-estimated at every step from the local window, allowing RFDR to track non-stationarity without an explicit drift model.
+A shorter window responds faster to local anomaly clusters but has lower statistical power for isolated anomalies; a longer window has higher power but lags behind distributional shifts.
+No adaptive $\hat{\pi}_0$ estimator (e.g.\ Storey's method) is applied; the standard BH procedure is used throughout.
+
+\paragraph{Design rationale.}
+The RFDR method is not drawn from a single reference paper.
+It adapts the classical BH procedure~\cite{benjamini1995controlling} to the streaming anomaly detection setting by combining it with rolling-window null estimation and robust score normalisation.
+This combination is a contribution of the present project.
+
+\paragraph{Parameters.}
+Table~\ref{tab:rfdr_params} lists the RFDR parameters.
+
+\begin{table}[H]
+\centering
+\caption{Parameters of the Rolling False Discovery Rate method.}
+\label{tab:rfdr_params}
+\begin{tabular}{llll}
+\toprule
+\textbf{Parameter} & \textbf{Symbol} & \textbf{Value} & \textbf{Source} \\
+\midrule
+FDR level & $\alpha$ & 0.05 & Empirical \\
+Rolling window length & $W$ & 500 & Empirical \\ % TODO: no systematic justification for W=500
+Minimum history & --- & 20 & Empirical \\
+MAD consistency constant & --- & 1.4826 & Exact under normality \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \section{Spoofing Gain Estimation}\label{sec:method:spoofing}
 % [CONTENT] From Fabre \& Challet (2025): define the expected cost of a

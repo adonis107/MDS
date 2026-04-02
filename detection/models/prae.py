@@ -164,7 +164,7 @@ def calculate_reconstruction_lambda(model, train_loader, device='cuda', num_batc
 
 def grid_search_lambda(train_loader, val_loader, heuristic_lambda, num_train_samples,
                             num_features, seq_len, device='cuda', epochs=15, learning_rate=1e-3,
-                            model_dim=64, num_heads=4, num_layers=2, representation_dim=128):
+                            model_dim=128, num_heads=8, num_layers=6, representation_dim=128, dim_feedforward=512):
     """Select lambda_reg by minimising validation reconstruction loss (paper Section 4.2).
 
     Trains a fresh PRAE for each candidate lambda (multiples of the heuristic)
@@ -181,7 +181,8 @@ def grid_search_lambda(train_loader, val_loader, heuristic_lambda, num_train_sam
         base_ae = BottleneckTransformer(
             num_features=num_features, sequence_length=seq_len,
             model_dim=model_dim, num_heads=num_heads,
-            num_layers=num_layers, representation_dim=representation_dim)
+            num_layers=num_layers, representation_dim=representation_dim,
+            dim_feedforward=dim_feedforward)
         model = PRAE(backbone_model=base_ae, num_train_samples=num_train_samples,
                      lambda_reg=candidate).to(device)
         

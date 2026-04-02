@@ -456,11 +456,12 @@ class AnomalyDetectionPipeline:
 
         transformer = BottleneckTransformer(
             num_features=num_features,
-            model_dim=t_cfg.get("model_dim", 64),
-            num_heads=t_cfg.get("num_heads", 4),
-            num_layers=t_cfg.get("num_layers", 2),
+            model_dim=t_cfg.get("model_dim", 128),
+            num_heads=t_cfg.get("num_heads", 8),
+            num_layers=t_cfg.get("num_layers", 6),
             representation_dim=t_cfg.get("representation_dim", 128),
             sequence_length=seq_length,
+            dim_feedforward=t_cfg.get("dim_feedforward", 512),
         )
 
         early_stop = EarlyStopping(
@@ -513,11 +514,12 @@ class AnomalyDetectionPipeline:
 
         backbone = BottleneckTransformer(
             num_features=num_features,
-            model_dim=t_cfg.get("model_dim", 64),
-            num_heads=t_cfg.get("num_heads", 4),
-            num_layers=t_cfg.get("num_layers", 2),
+            model_dim=t_cfg.get("model_dim", 128),
+            num_heads=t_cfg.get("num_heads", 8),
+            num_layers=t_cfg.get("num_layers", 6),
             representation_dim=t_cfg.get("representation_dim", 128),
             sequence_length=seq_length,
+            dim_feedforward=t_cfg.get("dim_feedforward", 512),
         )
 
         num_train_samples = (

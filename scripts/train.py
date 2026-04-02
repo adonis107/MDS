@@ -88,7 +88,7 @@ LR = 1e-4
 PATIENCE = 20
 
 # Model architectures
-TRANSFORMER_CFG = dict(model_dim=64, num_heads=4, num_layers=2, representation_dim=128)
+TRANSFORMER_CFG = dict(model_dim=128, num_heads=8, num_layers=6, representation_dim=128, dim_feedforward=512)
 PNN_HIDDEN_DIM = 64
 PRAE_SIGMA = 0.5
 

@@ -28,13 +28,13 @@ class BottleneckTransformerEncoder(nn.Module):
     Transformer Encoder with Bottleneck Representation
     Takes (Batch, Sequence_length, Number_features) as input and outputs (Batch, Representation_dimension)
     """
-    def __init__(self, num_features, model_dim, num_heads, num_layers, representation_dim, sequence_length):
+    def __init__(self, num_features, model_dim, num_heads, num_layers, representation_dim, sequence_length, dim_feedforward=512):
         super(BottleneckTransformerEncoder, self).__init__()
         self.model_dim = model_dim
         self.embedding = nn.Linear(num_features, model_dim)
         self.pos_encoder = PositionalEncoding(model_dim)
 
-        encoder_layers = nn.TransformerEncoderLayer(d_model=model_dim, nhead=num_heads, batch_first=True)
+        encoder_layers = nn.TransformerEncoderLayer(d_model=model_dim, nhead=num_heads, dim_feedforward=dim_feedforward, batch_first=True)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_layers=num_layers)
 
         self.flatten = nn.Flatten()
@@ -60,14 +60,14 @@ class BottleneckTransformerDecoder(nn.Module):
     Transformer Decoder with Bottleneck Representation
     Takes (Batch, Representation_dimension) as input and outputs (Batch, Sequence_length, Number_features)
     """
-    def __init__(self, num_features, model_dim, num_heads, num_layers, representation_dim, sequence_length):
+    def __init__(self, num_features, model_dim, num_heads, num_layers, representation_dim, sequence_length, dim_feedforward=512):
         super(BottleneckTransformerDecoder, self).__init__()
         self.model_dim = model_dim
         self.sequence_length = sequence_length
 
         self.expand = nn.Linear(representation_dim, sequence_length * model_dim)
 
-        decoder_layers = nn.TransformerEncoderLayer(d_model=model_dim, nhead=num_heads, batch_first=True)
+        decoder_layers = nn.TransformerEncoderLayer(d_model=model_dim, nhead=num_heads, dim_feedforward=dim_feedforward, batch_first=True)
         self.transformer_decoder = nn.TransformerEncoder(decoder_layers, num_layers=num_layers)
 
         self.output_layer = nn.Linear(model_dim, num_features)
@@ -84,10 +84,10 @@ class BottleneckTransformerDecoder(nn.Module):
     
 
 class BottleneckTransformer(BaseDeepModel):
-    def __init__(self, num_features, model_dim, num_heads, num_layers, representation_dim, sequence_length):
+    def __init__(self, num_features, model_dim, num_heads, num_layers, representation_dim, sequence_length, dim_feedforward=512):
         super(BottleneckTransformer, self).__init__()
-        self.encoder = BottleneckTransformerEncoder(num_features, model_dim, num_heads, num_layers, representation_dim, sequence_length)
-        self.decoder = BottleneckTransformerDecoder(num_features, model_dim, num_heads, num_layers, representation_dim, sequence_length)
+        self.encoder = BottleneckTransformerEncoder(num_features, model_dim, num_heads, num_layers, representation_dim, sequence_length, dim_feedforward)
+        self.decoder = BottleneckTransformerDecoder(num_features, model_dim, num_heads, num_layers, representation_dim, sequence_length, dim_feedforward)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.to(self.device)
         self.criterion = nn.MSELoss()

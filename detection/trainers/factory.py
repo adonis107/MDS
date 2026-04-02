@@ -45,7 +45,7 @@ def build_fresh_model(
     raise ValueError(f"Unknown model type: {model_type}")
 
 
-_DEFAULT_TRANSFORMER_CFG = dict(model_dim=64, num_heads=4, num_layers=2, representation_dim=128)
+_DEFAULT_TRANSFORMER_CFG = dict(model_dim=128, num_heads=8, num_layers=6, representation_dim=128, dim_feedforward=512)
 
 
 def load_model(

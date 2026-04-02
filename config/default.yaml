@@ -31,7 +31,7 @@ features:
       levels: 5
 
 preprocessing:
-  scaler: minmax        # minmax | standard | quantile
+  scaler: box_cox        # box_cox | minmax | standard | quantile
   seq_length: 25
   target_col: log_return
   train_ratio: 0.70

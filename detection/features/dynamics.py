@@ -77,8 +77,8 @@ def compute_elasticity(df, features, n_levels=10, target_size=1000, slope_depth=
     # Slope (elasticity) of orderbook sides
     # Measures how quickly prices change as volume is added/removed
     # A steep slope indicates low liquidity (small volume causes large price changes), flat slope indicates high liquidity
-    features["ask_slope"] = get_slope(P_bid, V_bid, depth=slope_depth)
-    features["bid_slope"] = get_slope(P_ask, V_ask, depth=slope_depth)
+    features["bid_slope"] = get_slope(P_bid, V_bid, depth=slope_depth)
+    features["ask_slope"] = get_slope(P_ask, V_ask, depth=slope_depth)
 
     return features
 

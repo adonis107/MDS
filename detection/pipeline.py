@@ -28,6 +28,7 @@ from detection.data.datasets import IndexDataset, get_lob
 from detection.data.loaders import create_sequences
 from detection.data.preprocessing import clean_lob, filter_market_hours
 from detection.data.scalers import scaler as QuantileScaler
+from detection.data.scalers import EmpiricalBoxCoxScaler
 from detection.features.dynamics import compute_dynamics, compute_elasticity
 from detection.features.event_flow import compute_event_flow
 from detection.features.hawkes import compute_hawkes
@@ -58,6 +59,7 @@ SCALER_REGISTRY: Dict[str, type] = {
     "minmax": MinMaxScaler,
     "standard": StandardScaler,
     "quantile": QuantileScaler,
+    "box_cox": EmpiricalBoxCoxScaler,
 }
 
 MODEL_TYPES = {"transformer_ocsvm", "pnn", "prae"}

@@ -101,6 +101,7 @@ Adonis JAMAL \quad Jean-Vincent MARTINI\par
 % and why they matter (first multi-model unsupervised pipeline combining
 % probabilistic density estimation, robust autoencoders, and economic gain
 % quantification on the same LOB dataset).
+\url{https://github.com/adonis107/MDS-PDMM}
 
 
 % ==============================================================================
@@ -439,6 +440,7 @@ Volume deltas $\Delta V^b_{1,t}$ and $\Delta V^a_{1,t}$ at the best quotes are a
 These features describe how much it costs to execute a given order size and how steeply the book's price schedule rises with volume.
 
 The sweep-to-fill cost is the volume-weighted average price paid to execute a target order of size $Q = 1{,}000$ units by walking through $L = 10$ levels.
+The value $Q = 1{,}000$ was chosen empirically to represent a moderately sized institutional order for TOTF.PA; no reference paper prescribes a specific target size, and a sensitivity analysis over $Q$ is deferred to Chapter~\ref{chap:data}.
 Denoting by $C^s_t(Q)$ the resulting average execution price on side $s$, the reported features are the excess costs relative to the mid-price:
 \begin{equation}
   \label{eq:sweep_cost}
@@ -449,7 +451,8 @@ Both quantities are non-negative under normal conditions.
 Large values indicate thin liquidity: a spoofing episode that removes genuine orders from the book can cause a spike in sweep cost.
 
 The book slope (elasticity) measures the sensitivity of price to cumulative volume.
-For each side $s$, a linear regression of price on log cumulative volume across the first $D = 5$ levels gives:
+For each side $s$, a linear regression of price on log cumulative volume across the first $D = 5$ levels gives (Tao et~al.~\cite{tao_2020} calibrate a comparable depth parameter to values between 3 and 5 depending on the stock; Fabre and Challet~\cite{fabre_2025} use $K = 5$ as a representative depth):
+The depth $D = 5$ is consistent with the range used by Tao et~al.~\cite{tao_2020} (who calibrate 3 to 5 depending on the stock) and Fabre and Challet~\cite{fabre_2025} (who use $K = 5$); an ablation over $D$ is reported in Chapter~\ref{chap:data}.
 \begin{equation}
   \label{eq:book_slope}
   p^s_{i,t} \approx \alpha^s_t + \beta^s_t \ln\!\left(\sum_{j=1}^{i} V^s_{j,t} + 1\right), \qquad i = 1, \ldots, D,
@@ -493,7 +496,8 @@ The event size features record the magnitude of each event type:
   \text{Size}_t^{\text{cancel},s} = |\Delta V^s_{1,t}| \cdot \mathbf{1}[\text{cancel}^s_t], \qquad
   \text{Size}_t^{\text{trade},s} = V^s_{1,t-1} \cdot \mathbf{1}[\text{trade}^s_t].
 \end{equation}
-Each of these four quantities, along with the raw Level-1 volume, is smoothed with a simple moving average over $W_{\text{SMA}} = 10$ events.
+Each of these four quantities, along with the raw Level-1 volume, is smoothed with a simple moving average over $W_{\text{SMA}} = 10$ events, following the feature definitions in Poutr\'e et~al.~\cite{poutre_2024}.
+The window size $W_{\text{SMA}} = 10$ follows the implementation of Poutr\'e et~al.~\cite{poutre_2024}, who adopt this value without ablation; we retain it unchanged and note that no sensitivity analysis over $W_{\text{SMA}}$ is performed in this work.
 
 Rapidity features measure the density of events per unit of calendar time:
 \begin{equation}
@@ -551,21 +555,25 @@ Small $\eta$ values give nearly equal weight to orders at all depths; large $\et
 Fabre and Challet~\cite{fabre_2025} work with Level-3 data, where each order event is individually observed with its volume and distance of placement.
 Our dataset provides Level-2 snapshots (aggregate volume at each of $L = 10$ price levels), so the integrals in Equations~\eqref{eq:limit_flow}-\eqref{eq:market_flow} are approximated as follows.
 At each event $t$, the limit-order volume at level $i$ on side $s$ is inferred from positive volume changes at unchanged price levels: $[\Delta V^s_{i,t}]^{+} \cdot \mathbf{1}[p^s_{i,t} = p^s_{i,t-1}]$.
-The distance mark $\delta^{L,s}_{i,t}$ is set to $c \cdot |p^s_{i,t} - p_{\mathrm{mid},t}|$, where $c = 10^4$ converts Euro-denominated distances to a dimensionless quantity.
+The distance mark $\delta^{L,s}_{i,t}$ is set to $c \cdot |p^s_{i,t} - p_{\mathrm{mid},t}|$, where $c = 10^4$ converts Euro-denominated distances to a dimensionless quantity comparable to basis points.
+The scaling constant $c = 10^4$ was chosen empirically so that the typical distance of a Level-1 order ($\sim 0.01$~EUR for TOTF.PA) maps to a dimensionless value of order $10^2$, placing it in a comparable range to the basis-point distances used by Fabre and Challet~\cite{fabre_2025} on cryptocurrency data; $c$ is dataset-specific and should be recalibrated for instruments with a different tick size.
 Marketable-order flow is inferred from volume decreases at changing price levels.
 The continuous-time exponential decay $e^{-\beta t}$ is replaced by a discrete EWMA with half-life parameter $\beta$ (measured in events), applied to each side and kernel configuration independently.
 
 \paragraph{Parameter grid.}
-The time scales are $\boldsymbol{\beta} = \{10, 100, 1{,}000\}$ and the distance scales are $\boldsymbol{\eta} = \{0.001, 0.1, 1.0, 10.0\}$.
+Following Fabre and Challet~\cite{fabre_2025}, the time scales are $\boldsymbol{\beta} = \{10, 100, 1{,}000\}$ and the distance scales are $\boldsymbol{\eta} = \{0.001, 0.1, 1.0, 10.0\}$ (expressed in bp$^{-1}$ in the original paper).
+These grid values follow Fabre and Challet~\cite{fabre_2025}, who select them on the basis of a multi-scale coverage argument without a formal ablation study; we adopt the same grid and do not perform an independent ablation in this work.
 With two sides of the book, $|\boldsymbol{\beta}| \times |\boldsymbol{\eta}| \times 2 = 24$ limit-order flow features form $\mathcal{L}_t$, and $|\boldsymbol{\beta}| \times 2 = 6$ marketable-order flow features form $\mathcal{M}_t$.
 
 \paragraph{Short- and long-horizon flows.}
+The half-lives $h_s = 5$ and $h_\ell = 50$ were chosen empirically to capture short-term (a few events) and medium-term (tens of events) order flow memory at the top of the book; no reference paper prescribes specific values, and a sensitivity analysis is deferred to Chapter~\ref{chap:data}.
 In addition to the kernel-weighted features above, limit-order and marketable-order flows at the best level (Level~1) are smoothed at two fixed half-lives ($h_s = 5$ and $h_\ell = 50$ events) for the limit component and at $h_s = 5$ for the market component, yielding six features: $L^b_t(h_s)$, $L^a_t(h_s)$, $M^b_t(h_s)$, $M^a_t(h_s)$, $L^b_t(h_\ell)$, $L^a_t(h_\ell)$.
 These correspond to the special case $\eta = 0$ (no spatial decay) with a single time scale, and capture the short- and long-term memory of order flow at the top of the book.
 
 \paragraph{Deep order insertions.}
 Volume increases at Level~5 are tracked separately to capture layering activity deep in the book.
 The positive volume change at Level~5, smoothed with an EWMA of half-life $h_d = 10$, produces two additional features (bid and ask).
+The half-life $h_d = 10$ and the choice of Level~5 as the monitoring depth were set empirically: Level~5 lies deep enough that large insertions there are unlikely to be filled, consistent with the layering signature described by Fabre and Challet~\cite{fabre_2025}, and $h_d = 10$ provides smoothing over a short horizon to reduce noise; sensitivity to both choices is deferred to Chapter~\ref{chap:data}.
 
 
 \subsection{Order Flow Imbalance}\label{subsec:features:ofi}
@@ -596,6 +604,7 @@ Computing OFI at five separate levels allows the models to distinguish pressure 
 \subsection{Preprocessing and Scaling}\label{subsec:features:preprocessing}
 
 Before the feature matrix enters any model, four cleaning steps are applied in sequence.
+The value $W_{\text{warmup}} = 3{,}000$ was chosen empirically to ensure that all rolling windows (up to $W = 100$) and EWMA features (with half-life up to $h_\ell = 50$) are fully populated before the output is consumed by any model; a sensitivity analysis is reported in Chapter~\ref{chap:data}.
 First, the initial $W_{\text{warmup}} = 3{,}000$ rows of each trading day are discarded to allow all EWMA and rolling-window features to stabilise.
 Second, infinite values (arising from division by zero in rare edge cases) are replaced by zero.
 Third, each feature column is clipped at its $0.1\%$ and $99.9\%$ quantiles to remove extreme outliers while preserving the tail structure needed for anomaly detection.
@@ -604,61 +613,363 @@ Fourth, any column with standard deviation below $10^{-9}$ is dropped as uninfor
 Three scaling methods are available, selected per experiment.
 \emph{MinMax} scaling maps each feature to $[0, 1]$.
 \emph{Standard} scaling centres each feature to zero mean and unit variance.
-\emph{Quantile} scaling first applies a quantile transformation (mapping the marginal distribution to a standard Gaussian) and then applies standard scaling; this two-stage procedure is the most robust to the heavy tails typical of LOB features.
+The default method, following Fabre and Challet~\cite{fabre_2025}, is an empirical Box-Cox transformation.
+For each feature $j$, the Box-Cox transform with parameter $\lambda_j > 0$ is
+\begin{equation}
+  \label{eq:boxcox}
+  T_{\lambda_j}(x^{(j)}) = \frac{(x^{(j)})^{\lambda_j} - 1}{\lambda_j},
+\end{equation}
+with the convention that $T_0(x) = \ln(x)$.
+The parameter $\lambda_j$ is chosen per feature to maximise the Gaussian log-likelihood of the transformed values on the training set.
+Before transformation, features with non-positive values are shifted by $|\min(x^{(j)})| + \epsilon$ (with $\epsilon = 10^{-6}$) to ensure strictly positive inputs; the shift is stored and applied consistently at inference time.
+After transformation, each feature is standardised to zero mean and unit variance using the training-set statistics:
+\begin{equation}
+  \label{eq:boxcox_zscore}
+  z_{\lambda_j}(x^{(j)}) = \frac{T_{\lambda_j}(x^{(j)}) - \bar{T}_{\lambda_j}}{\sqrt{S_{\lambda_j}}},
+\end{equation}
+where $\bar{T}_{\lambda_j}$ and $S_{\lambda_j}$ are the empirical mean and variance of the transformed feature on the training set.
+This two-stage procedure addresses the heavy tails typical of LOB features, which can cause unstable weight updates during training.
+A legacy \emph{Quantile} scaler (quantile transformation to a Gaussian followed by standard scaling) is retained for ablation purposes.
 In all cases, the scaler is fit on the training partition only and then applied to validation and test data, preventing information leakage across splits.
 
-\section{Detection Models}\label{sec:method:models}
-% [CONTENT] Overview: three models, each producing a scalar anomaly score
-% per time step. The models are complementary: one operates in latent space,
-% one estimates a conditional density, one uses reconstruction error with
-% contamination robustness.
+\section{Detection Models}\label{sec:methodology:models}
 
-\subsection{Transformer Bottleneck Autoencoder + One-Class SVM}\label{sec:method:models:tae_ocsvm}
-% [CONTENT] Architecture: input $(B, S, d)$ $\to$ linear embedding to
-% $d_{\text{model}}$ $\to$ sinusoidal positional encoding $\to$
-% $L$-layer Transformer encoder $\to$ flatten $\to$ bottleneck linear
-% $\to$ $\mathbf{z} \in \mathbb{R}^{d_{\text{rep}}}$ $\to$ expand $\to$
-% Transformer decoder $\to$ output $(B, S, d)$. Training loss: MSE
-% reconstruction. After training, encode all training data to latent space;
-% fit a Nystr\"om-approximated OC-SVM with RBF kernel. Anomaly score:
-% negated decision function $-f(\mathbf{z})$.
+Three complementary unsupervised models are trained on the engineered feature set described in Section~\ref{sec:methodology:features}.
+Each model embodies a different inductive bias: the Transformer bottleneck autoencoder with One-Class SVM learns a compressed latent representation and fits a one-class boundary in that space; the probabilistic neural network predicts the full conditional distribution of the next mid-price move, providing both a likelihood-based anomaly score and an economic spoofing gain estimate; the probabilistic robust autoencoder learns to reconstruct normal patterns while explicitly down-weighting suspected anomalies during training.
+The diversity of approaches is intentional: reconstruction-based, density-estimation-based, and robust methods surface different signatures of anomalous order flow, and their agreement identifies the highest-confidence detections.
 
-\paragraph{Nystr\"om Approximation and SGD Training.}
-% [CONTENT] Describe the Nystr\"om kernel approximation:
-% sample $m$ landmarks, compute $K_{ZZ}$, normalisation
-% $U S^{-1/2}$, feature map $\phi(x) = K(x, Z) \cdot U S^{-1/2}$.
-% Linear OC-SVM objective:
-% $\min_{w,\rho} \frac{1}{2}\|w\|^2 - \rho + \frac{1}{\nu n}\sum_i [-(w^\top \phi(x_i) - \rho)]_+$.
-% Trained via SGD on GPU. Rho set as the $\nu$-quantile of projections (KKT).
-% Gamma set via the median heuristic: $\gamma = 1/\text{median}(\|z_i - z_j\|^2)$.
 
-\subsection{Probabilistic Neural Network}\label{sec:method:models:pnn}
-% [CONTENT] Architecture: flatten $(S \times d)$ $\to$ one hidden layer
-% (64 units, ReLU) $\to$ 3 outputs $(\mu, \sigma_{\text{raw}}, \alpha)$.
-% $\sigma = \text{Softplus}(\sigma_{\text{raw}}) + \epsilon$. The target is
-% the next-step scaled log return. Loss: skew-normal NLL
-% $-\log\left(\frac{2}{\sigma}\phi(z)\Phi(\alpha z)\right)$
-% where $z = (y - \mu)/\sigma$, $\phi$ is the standard normal PDF, $\Phi$
-% the CDF. Anomaly score: the NLL itself (high NLL = poor fit = anomaly).
+\subsection{Transformer Bottleneck Autoencoder with One-Class SVM}\label{subsec:models:tfocsvm}
 
-\subsection{Probabilistic Robust Autoencoder}\label{sec:method:models:prae}
-% [CONTENT] Architecture: same Transformer backbone as the
-% Transformer+OC-SVM, but wrapped in the PRAE framework. Each training
-% sample $i$ has a learnable gate parameter $\mu_i$. During training,
-% $z_i = \text{clamp}(\mu_i + \epsilon_i, 0, 1)$ with $\epsilon_i \sim
-% \mathcal{N}(0, \sigma^2)$. Loss:
-% $\mathcal{L} = \sum_i z_i \|x_i - \hat{x}_i\|^2 - \lambda \sum_i \mathbb{E}[z_i]$
-% where $\mathbb{E}[z_i]$ is computed analytically from the truncated
-% Gaussian. The regulariser pushes gates toward 1 (normal); high
-% reconstruction error pushes them toward 0 (anomalous). At test time,
-% gates are absent: the anomaly score is the per-sample reconstruction error.
+This detector follows the two-stage framework of Poutr\'e et~al.~\cite{poutre_2024}: a Transformer bottleneck autoencoder is trained to reconstruct LOB feature sequences, then its encoder is frozen and a One-Class SVM is fitted on the bottleneck representations.
+The anomaly score is the negated OC-SVM decision function, so that higher values indicate greater anomalousness.
 
-\paragraph{Lambda Tuning.}
-% [CONTENT] On the first training day, compute a heuristic lambda from the
-% average input energy. Run a grid search over factors
-% $\{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0\} \times \lambda_{\text{heuristic}}$,
-% training a fresh PRAE for 15 epochs each, selecting the factor that
-% minimises validation reconstruction loss.
+\paragraph{Encoder.}
+The input to the encoder is a subsequence $\mathbf{S}_t \in \mathbb{R}^{k \times d}$, where $k$ is the sequence length and $d$ the number of features.
+A linear embedding projects each feature vector from $\mathbb{R}^d$ to $\mathbb{R}^{d_{\text{model}}}$.
+The embedded sequence is scaled by $\sqrt{d_{\text{model}}}$ and summed with sinusoidal positional encodings following Vaswani et~al.~\cite{vaswani2017attention}, providing the model with information about relative position within the subsequence.
+The encoded sequence passes through $N_{\text{enc}}$ Transformer encoder layers, each consisting of multi-head self-attention with $h$ heads followed by a position-wise feedforward network.
+After the final encoder layer, the output matrix $\mathbf{E}_t \in \mathbb{R}^{k \times d_{\text{model}}}$ is flattened to a vector $\mathbf{e}_t \in \mathbb{R}^{k \cdot d_{\text{model}}}$ and projected through a linear bottleneck to produce the representation:
+\begin{equation}
+  \label{eq:bottleneck}
+  \mathbf{z}_t = \mathbf{W}_b \, \mathbf{e}_t + \mathbf{b}_b \in \mathbb{R}^{d_{\text{rep}}},
+\end{equation}
+where $\mathbf{W}_b \in \mathbb{R}^{d_{\text{rep}} \times k \cdot d_{\text{model}}}$.
+Because $d_{\text{rep}} \ll k \cdot d$, the bottleneck forces the encoder to discard redundant information and retain only the features most useful for reconstruction. Anomalous subsequences, which deviate from the patterns seen during training, are expected to occupy regions of the latent space distinct from normal data.
+
+\paragraph{Decoder.}
+The decoder mirrors the encoder in reverse.
+A linear layer expands the bottleneck vector $\mathbf{z}_t$ back to $\mathbb{R}^{k \cdot d_{\text{model}}}$, which is reshaped to $\mathbb{R}^{k \times d_{\text{model}}}$.
+This matrix passes through $N_{\text{dec}}$ Transformer layers (using the same \texttt{TransformerEncoderLayer} architecture as the encoder, without cross-attention or causal masking) and a final linear projection from $\mathbb{R}^{d_{\text{model}}}$ to $\mathbb{R}^{d}$ produces the reconstruction $\hat{\mathbf{S}}_t$.
+Both the encoder and decoder use the same number of layers ($N_{\text{enc}} = N_{\text{dec}} = N$) and the same model dimension $d_{\text{model}}$, making the architecture symmetric.
+
+\paragraph{Training objective.}
+The autoencoder is trained to minimise the mean squared error between the input and its reconstruction:
+\begin{equation}
+  \label{eq:ae_loss}
+  \mathcal{L}_{\text{AE}}(\Theta) = \frac{1}{|\mathcal{D}|} \sum_{\mathbf{S}_t \in \mathcal{D}} \left\| \mathbf{S}_t - \hat{\mathbf{S}}_t \right\|_F^2,
+\end{equation}
+where $\|\cdot\|_F$ denotes the Frobenius norm and $\mathcal{D}$ is the training set.
+The Adam optimiser~\cite{kingma2014adam} is used with a learning rate of $\eta = 10^{-4}$.
+Training proceeds for up to $E = 1{,}000$ epochs per day with early stopping on the validation loss (patience $P = 20$ epochs).
+Gradient norms are clipped to 1.0 to prevent instability.
+
+\paragraph{Divergences from Poutr\'e et~al.}
+The architecture parameters differ from those of Poutr\'e et~al.~\cite{poutre_2024}, who use $h = 8$ attention heads, a feedforward dimension $d_{\text{ff}} = 512$, and $N = 6$ Transformer layers, following Vaswani et~al.~\cite{vaswani2017attention}.
+Our implementation uses $h = 4$, $d_{\text{model}} = 64$ (with the default feedforward dimension $d_{\text{ff}} = 2{,}048$ from PyTorch's \texttt{TransformerEncoderLayer}), and $N = 2$, resulting in a substantially smaller model.
+This reduction was necessary because the TOTF.PA dataset is smaller than the five-stock LOBSTER dataset used in the original paper, and the larger architecture overfitted in preliminary experiments.
+The representation dimension ($d_{\text{rep}} = 128$) and the sequence length ($k = 25$) match the paper.
+
+\paragraph{One-Class SVM on bottleneck representations.}
+After the autoencoder is trained, the encoder is frozen and used to map every training subsequence to its bottleneck vector $\mathbf{z}_t \in \mathbb{R}^{d_{\text{rep}}}$.
+A One-Class SVM with a radial basis function (RBF) kernel is then fitted on these representations.
+The OC-SVM finds a hyperplane in the kernel-induced feature space $\mathcal{F}$ that separates the mapped data from the origin with maximum margin, solving:
+\begin{equation}
+  \label{eq:ocsvm}
+  \min_{\mathbf{w} \in \mathcal{F},\, \boldsymbol{\xi},\, \rho} \quad \frac{1}{2}\|\mathbf{w}\|^2 - \rho + \frac{1}{\nu n} \sum_{i=1}^{n} \xi_i, \qquad \text{s.t.} \quad \mathbf{w}^\top \Phi(\mathbf{z}_i) \geq \rho - \xi_i, \quad \xi_i \geq 0,
+\end{equation}
+where $\Phi$ is the feature map induced by the RBF kernel $k_\gamma(\mathbf{z}, \mathbf{z}') = \exp\!\bigl(-\gamma \|\mathbf{z} - \mathbf{z}'\|^2\bigr)$, $\nu \in (0, 1]$ bounds the fraction of training points allowed outside the boundary, and $\xi_i$ are slack variables.
+
+The decision function for a test point $\mathbf{z}$ is:
+\begin{equation}
+  \label{eq:ocsvm_decision}
+  f(\mathbf{z}) = \mathbf{w}^\top \Phi(\mathbf{z}) - \rho.
+\end{equation}
+Positive values indicate inliers; negative values indicate outliers.
+The anomaly score used downstream is $-f(\mathbf{z})$, so that higher scores correspond to greater anomalousness.
+
+The OC-SVM is applied to the bottleneck rather than to the raw features or to the reconstruction error for two reasons.
+First, the bottleneck is a lower-dimensional ($d_{\text{rep}} = 128$ vs.\ $d \approx 80$ features $\times$ $k = 25$ time steps $= 2{,}000$ raw dimensions), semantically compressed space where the OC-SVM can learn a tighter boundary.
+Second, Poutr\'e et~al.~\cite{poutre_2024} show that the dissimilarity approach (OC-SVM on representations) substantially outperforms the reconstruction error alone, because normal data is more easily separable from anomalous data in the learned representation space than in the reconstruction error distribution.
+
+The bandwidth parameter $\gamma$ is set via the median heuristic:
+\begin{equation}
+  \label{eq:median_heuristic}
+  \gamma = \frac{1}{\mathrm{median}\!\left(\|\mathbf{z}_i - \mathbf{z}_j\|^2\right)},
+\end{equation}
+computed over a random subsample of 2{,}000 pairs from the training representations.
+This differs from Poutr\'e et~al.~\cite{poutre_2024}, who use $\gamma = 10 / (d_{\text{rep}} \cdot \mathrm{Var}(\mathbf{z}))$; the median heuristic was found to produce better-calibrated kernel values in preliminary experiments on TOTF.PA data (the original formula yielded $\gamma$ values large enough to collapse $k_\gamma$ to near-zero between distinct points).
+
+\subsubsection{Nystr\"om Approximation and SGD Training}\label{subsubsec:models:nystrom}
+
+The Nystr\"om kernel approximation is a computational adaptation introduced in this project; it does not appear in Poutr\'e et~al.~\cite{poutre_2024}, who use the standard quadratic-programming solver from scikit-learn.
+The adaptation is motivated by scalability: a standard kernel SVM requires computing and storing an $n \times n$ kernel matrix, which is infeasible when $n$ exceeds $10^5$ training subsequences.
+The Nystr\"om method approximates the kernel matrix using a random subset of $m \ll n$ landmark points, reducing memory from $O(n^2)$ to $O(nm)$ and enabling GPU-accelerated training.
+
+The approximation proceeds as follows.
+A set of $m$ landmark points $\mathbf{C} = \{\mathbf{c}_1, \ldots, \mathbf{c}_m\}$ is drawn uniformly at random from the training representations.
+The $m \times m$ kernel matrix $\mathbf{K}_{\mathbf{CC}} = [k_\gamma(\mathbf{c}_i, \mathbf{c}_j)]_{i,j}$ is computed and regularised by adding $10^{-6} \mathbf{I}_m$.
+Its eigendecomposition $\mathbf{K}_{\mathbf{CC}} = \mathbf{U} \boldsymbol{\Lambda} \mathbf{U}^\top$ yields the normalisation matrix $\mathbf{U} \boldsymbol{\Lambda}^{-1/2}$.
+The approximate feature map for any point $\mathbf{z}$ is:
+\begin{equation}
+  \label{eq:nystrom}
+  \tilde{\Phi}(\mathbf{z}) = \mathbf{k}(\mathbf{z}, \mathbf{C}) \cdot \mathbf{U} \boldsymbol{\Lambda}^{-1/2} \in \mathbb{R}^m,
+\end{equation}
+where $\mathbf{k}(\mathbf{z}, \mathbf{C}) = \bigl[k_\gamma(\mathbf{z}, \mathbf{c}_1), \ldots, k_\gamma(\mathbf{z}, \mathbf{c}_m)\bigr]$.
+
+After applying this feature map, the OC-SVM reduces to a linear problem in $\mathbb{R}^m$.
+The weight vector $\mathbf{w} \in \mathbb{R}^m$ and the offset $\rho$ are trained via stochastic gradient descent on the hinge-based objective:
+\begin{equation}
+  \label{eq:ocsvm_sgd}
+  \mathcal{L}_{\text{OC-SVM}}(\mathbf{w}, \rho) = \frac{1}{2}\|\mathbf{w}\|^2 - \rho + \frac{1}{\nu |\mathcal{B}|} \sum_{i \in \mathcal{B}} \bigl[-\bigl(\mathbf{w}^\top \tilde{\Phi}(\mathbf{z}_i) - \rho\bigr)\bigr]_+,
+\end{equation}
+where $\mathcal{B}$ is a mini-batch of size 256 and $[\cdot]_+$ denotes the hinge function.
+SGD with momentum 0.9 and learning rate $10^{-2}$ runs for $E_{\text{SVM}} = 500$ epochs.
+After SGD converges, the offset $\rho$ is reset to the $\nu$-quantile of the training projections $\mathbf{w}^\top \tilde{\Phi}(\mathbf{z}_i)$, enforcing the KKT condition that exactly a fraction $\nu$ of training points lie outside the boundary regardless of SGD convergence quality.
+
+The number of Nystr\"om landmarks is set to $m = 300$; this value was chosen to balance approximation accuracy against memory cost on a single GPU, and was not tuned systematically.
+
+\begin{table}[H]
+\centering
+\caption{Hyperparameters of the Transformer bottleneck autoencoder and Nystr\"om OC-SVM.}
+\label{tab:tae_ocsvm_hyperparams}
+\begin{tabular}{llll}
+\toprule
+\textbf{Parameter} & \textbf{Symbol} & \textbf{Value} & \textbf{Source} \\
+\midrule
+Sequence length & $k$ & 25 & Poutr\'e et~al.~\cite{poutre_2024} \\
+Model dimension & $d_{\text{model}}$ & 64 & Empirical \\
+Attention heads & $h$ & 4 & Empirical \\
+Transformer layers & $N$ & 2 & Empirical \\
+Representation dimension & $d_{\text{rep}}$ & 128 & Poutr\'e et~al.~\cite{poutre_2024} \\
+Training loss & --- & MSE (Frobenius) & Poutr\'e et~al.~\cite{poutre_2024} \\
+Optimiser & --- & Adam & Poutr\'e et~al.~\cite{poutre_2024} \\
+Learning rate & $\eta$ & $10^{-4}$ & Empirical \\
+Max epochs & $E$ & 1{,}000 & Empirical \\
+Early stopping patience & $P$ & 20 & Empirical \\
+Gradient clipping & --- & max norm 1.0 & Empirical \\
+\midrule
+OC-SVM kernel & --- & RBF & Poutr\'e et~al.~\cite{poutre_2024} \\
+Outlier fraction & $\nu$ & 0.01 & Empirical \\
+RBF bandwidth & $\gamma$ & Median heuristic & Empirical \\
+Nystr\"om landmarks & $m$ & 300 & Empirical \\
+SGD learning rate & --- & $10^{-2}$ & Empirical \\
+SGD momentum & --- & 0.9 & Empirical \\
+SGD epochs & $E_{\text{SVM}}$ & 500 & Empirical \\
+SGD batch size & --- & 256 & Empirical \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+\subsection{Probabilistic Neural Network}\label{subsec:models:pnn}
+
+The PNN follows the framework of Fabre and Challet~\cite{fabre_2025}, who train a neural network to predict the conditional probability distribution of the next mid-price move given the current order flow state.
+Two quantities are derived from this prediction: the negative log-likelihood of the realised price move, which serves as a general anomaly score (events where the realised move is unlikely under the model receive high scores), and a spoofing gain that quantifies the profit a rational manipulator could extract from the current book state.
+
+\paragraph{Spoofing gain.}
+Before describing the network, we define the economic quantity that motivates it.
+Consider a manipulative agent who wants to sell $q$ units.
+She simultaneously places a bona fide ask order at distance $\delta_a$ from the best ask and a non-bona-fide (spoof) bid order of size $Q \gg q$ at distance $\delta_b$ from the best bid.
+The spoofing gain is the reduction in expected execution cost achieved by the spoof order:
+\begin{equation}
+  \label{eq:spoofing_gain}
+  G_t = \mathbb{E}\!\left[C^a_{\text{spoof}}(0, \delta_a, 0, q) \mid \mathbf{x}^0_t\right] - \mathbb{E}\!\left[C^a_{\text{spoof}}(\delta_b, \delta_a, Q, q) \mid \mathbf{x}_t\right],
+\end{equation}
+where $C^a_{\text{spoof}}(\delta_b, \delta_a, Q, q)$ is the net cost of executing the strategy (genuine ask order filled, spoof bid order potentially filled, residual inventory liquidated at market) and $\mathbf{x}^0_t$, $\mathbf{x}_t$ denote the feature vectors without and with the spoof order, respectively~\cite{fabre_2025}.
+$G_t > 0$ means spoofing is profitable at time $t$.
+
+Under the assumptions of Fabre and Challet~\cite{fabre_2025} (no partial fills, execution triggered when the mid-price crosses the order price, mandatory liquidation of unintended inventory), the expected cost depends on four terms involving the probability of fill on each side and the conditional expectation of the price move given fill or no fill.
+Let $s_t$ denote the bid-ask spread at time $t$, and let $\varepsilon^+$, $\varepsilon^-$ denote the maker and taker fees.
+For a seller, the expected cost is:
+\begin{align}
+  \label{eq:expected_cost}
+  \mathbb{E}\!\left[C^a_{\text{spoof}}\right] &= -P\!\left(\Delta p > \delta_a + \tfrac{s_t}{2}\right)(1 - \varepsilon^+)\, q\,(p^a_{1,t} + \delta_a) \nonumber \\
+  &\quad + P\!\left(\Delta p < -\delta_b - \tfrac{s_t}{2}\right)(1 + \varepsilon^+)\, Q\,(p^b_{1,t} - \delta_b) \nonumber \\
+  &\quad - P\!\left(\Delta p \leq \delta_a + \tfrac{s_t}{2}\right)(1 - \varepsilon^-)\, q\,\bigl(p^b_{1,t} + \mathbb{E}[\Delta p \mid \Delta p \leq \delta_a + \tfrac{s_t}{2}]\bigr) \nonumber \\
+  &\quad - P\!\left(\Delta p < -\delta_b - \tfrac{s_t}{2}\right)(1 - \varepsilon^-)\, Q\,\bigl(p^b_{1,t} + \mathbb{E}[\Delta p \mid \Delta p < -\delta_b - \tfrac{s_t}{2}]\bigr),
+\end{align}
+where the probabilities and conditional expectations are evaluated under the PNN-predicted distribution of $\Delta p$.
+
+\paragraph{Architecture.}
+The PNN takes as input the flattened feature vector $\mathbf{x}_t \in \mathbb{R}^{k \cdot d}$, where $k = 25$ is the sequence length and $d$ the number of features.
+A single hidden layer with $d_h = 64$ units and ReLU activation maps the input to a hidden representation.
+A linear output layer produces three scalars $(\mu_{\text{raw}}, \sigma_{\text{raw}}, \alpha_{\text{raw}})$.
+The location parameter $\mu = \mu_{\text{raw}}$ and the skewness parameter $\alpha = \alpha_{\text{raw}}$ are unconstrained, while the scale parameter is made strictly positive by:
+\begin{equation}
+  \label{eq:pnn_sigma}
+  \sigma = \mathrm{Softplus}(\sigma_{\text{raw}}) + \epsilon, \qquad \epsilon = 10^{-6}.
+\end{equation}
+The output triple $(\mu, \sigma, \alpha)$ parameterises a skew-normal distribution for the next-step mid-price log return $y_t = \ln(p_{\text{mid},t+1} / p_{\text{mid},t})$.
+
+\paragraph{Loss function.}
+The training objective is the negative log-likelihood of the skew-normal distribution, following Equation~(20) of Fabre and Challet~\cite{fabre_2025}.
+The skew-normal density is:
+\begin{equation}
+  \label{eq:skewnormal}
+  f(y \mid \mu, \sigma, \alpha) = \frac{2}{\sigma}\, \varphi\!\left(\frac{y - \mu}{\sigma}\right) \Phi\!\left(\alpha \cdot \frac{y - \mu}{\sigma}\right),
+\end{equation}
+where $\varphi$ is the standard normal density and $\Phi$ is the standard normal CDF.
+The per-batch loss is:
+\begin{equation}
+  \label{eq:pnn_loss}
+  \mathcal{L}_{\text{PNN}} = -\frac{1}{|\mathcal{B}|}\sum_{i \in \mathcal{B}} \ln\!\Bigl(f(y_i \mid \mu_i, \sigma_i, \alpha_i) + 10^{-10}\Bigr).
+\end{equation}
+
+\paragraph{Training procedure.}
+The Adam optimiser~\cite{kingma2014adam} is used with a learning rate of $\eta = 10^{-4}$ and a batch size of 64.
+Training runs for up to $E = 1{,}000$ epochs per day with early stopping on the validation loss (patience $P = 20$).
+The model is trained sequentially across trading days within the continual learning protocol described in Chapter~\ref{chap:data}.
+
+\paragraph{Anomaly scoring.}
+Two anomaly scores are available.
+The primary score, used for spoofing detection, is the spoofing gain $G_t$ defined in Equation~\eqref{eq:spoofing_gain}: positive values flag events where spoofing would be profitable.
+The secondary score is the per-sample NLL $-\ln f(y_t \mid \mu_t, \sigma_t, \alpha_t)$: high values indicate that the realised price move was unlikely under the model, which may signal any form of anomalous activity, not only spoofing.
+
+\paragraph{Divergences from Fabre and Challet.}
+The following aspects of the implementation differ from the original paper.
+\begin{enumerate}
+  \item \textbf{Data source.} Fabre and Challet~\cite{fabre_2025} work with Level-3 cryptocurrency data (BTC-USD and ETH-USD on Coinbase), where each individual order is observed with its volume and distance of placement.
+  Our dataset provides Level-2 equity snapshots (aggregate volume at 10 price levels for TOTF.PA, Euronext Paris).
+  The Hawkes-inspired features are approximated from volume changes at unchanged price levels, as described in Section~\ref{subsec:features:hawkes}.
+  \item \textbf{Feature set.} The original paper uses 31 features (24 limit-order flow, 6 marketable-order flow, 1 spread).
+  Our pipeline uses approximately 80 features from seven groups (Section~\ref{sec:methodology:features}), including imbalance, dynamics, elasticity, volatility, event flow, OFI, and Hawkes features.
+  The PNN receives the full feature set, flattened over the sequence window.
+  \item \textbf{Batch size.} Fabre and Challet use a batch size of $2^{12} = 4{,}096$.
+  Our implementation uses a batch size of 64, constrained by GPU memory when the flattened input dimension is large ($k \cdot d \approx 2{,}000$).
+  \item \textbf{Learning rate and patience.} The paper uses a learning rate of $10^{-3}$ and early stopping patience of 100 epochs.
+  Our implementation uses $10^{-4}$ and patience 20, tuned for the smaller and noisier equity dataset.
+  \item \textbf{Continual training.} The paper trains on a fixed dataset of $10^6$ orders.
+  Our pipeline trains sequentially across trading days, carrying over weights from the previous day.
+\end{enumerate}
+
+\begin{table}[H]
+\centering
+\caption{Hyperparameters of the Probabilistic Neural Network.}
+\label{tab:pnn_hyperparams}
+\begin{tabular}{llll}
+\toprule
+\textbf{Parameter} & \textbf{Symbol} & \textbf{Value} & \textbf{Source} \\
+\midrule
+Input dimension & --- & $k \cdot d$ (flattened) & Fabre and Challet~\cite{fabre_2025} \\
+Hidden units & $d_h$ & 64 & Fabre and Challet~\cite{fabre_2025} \\
+Hidden activation & --- & ReLU & Fabre and Challet~\cite{fabre_2025} \\
+Output distribution & --- & Skew-normal ($\mu$, $\sigma$, $\alpha$) & Fabre and Challet~\cite{fabre_2025} \\
+Loss & --- & Skew-normal NLL & Fabre and Challet~\cite{fabre_2025} \\
+Optimiser & --- & Adam & Fabre and Challet~\cite{fabre_2025} \\
+Learning rate & $\eta$ & $10^{-4}$ & Empirical \\
+Batch size & $|\mathcal{B}|$ & 64 & Empirical \\
+Max epochs & $E$ & 1{,}000 & Fabre and Challet~\cite{fabre_2025} \\
+Early stopping patience & $P$ & 20 & Empirical \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+\subsection{Probabilistic Robust Autoencoder}\label{subsec:models:prae}
+
+The PRAE, introduced by Lindenbaum et~al.~\cite{lindenbaum2022prae}, addresses the contamination problem that affects all reconstruction-based anomaly detectors: when training data contains anomalous events, a standard autoencoder learns to reconstruct those anomalies alongside normal patterns, blurring the boundary between the two.
+The PRAE solves this by introducing a learnable per-sample gate that controls each training point's contribution to the reconstruction loss.
+During training, the gates are pushed toward 1 (inlier) by a regularisation term but toward 0 (outlier) by high reconstruction error, so the autoencoder focuses on reconstructing clean data.
+
+\paragraph{Backbone.}
+The PRAE uses the same bottleneck Transformer autoencoder architecture as the detector in Section~\ref{subsec:models:tfocsvm} (same $d_{\text{model}}$, $h$, $N$, and $d_{\text{rep}}$).
+The Transformer backbone is wrapped in the PRAE framework; the bottleneck representation is not extracted for a separate classifier but is used internally within the reconstruction pipeline.
+
+\paragraph{Stochastic gates.}
+Each training sample $i$ is assigned a learnable gate parameter $\mu_i \in \mathbb{R}$, initialised to 0.5.
+During each forward pass, a stochastic gate is drawn:
+\begin{equation}
+  \label{eq:prae_gate}
+  z_i = \mathrm{clamp}\!\bigl(\mu_i + \varepsilon_i,\; 0,\; 1\bigr), \qquad \varepsilon_i \sim \mathcal{N}(0, \sigma^2),
+\end{equation}
+where $\sigma$ is a fixed noise scale.
+When $\mu_i$ drifts below zero, $z_i$ is clamped to zero with high probability, effectively removing sample $i$ from the reconstruction loss.
+When $\mu_i$ is large and positive, $z_i \approx 1$ and the sample contributes fully.
+
+\paragraph{Loss function.}
+Following the $\ell_1$ relaxation of Lindenbaum et~al.~\cite{lindenbaum2022prae} (their Equation~5), the training objective is:
+\begin{equation}
+  \label{eq:prae_loss}
+  \mathcal{L}_{\text{PRAE}} = \frac{1}{|\mathcal{B}|}\sum_{i \in \mathcal{B}} z_i \left\|\mathbf{S}_i - \hat{\mathbf{S}}_i\right\|^2 - \lambda \cdot \frac{1}{|\mathcal{B}|}\sum_{i \in \mathcal{B}} \mathbb{E}[z_i],
+\end{equation}
+where the first term is a Monte Carlo estimate of the gated reconstruction error (using the sampled $z_i$) and the second term is the regulariser that encourages including more samples.
+The expected gate value $\mathbb{E}[z_i]$ is computed analytically from the truncated Gaussian distribution of $z_i$ given $\mu_i$ and $\sigma$:
+\begin{equation}
+  \label{eq:expected_gate}
+  \mathbb{E}[z_i] = \frac{\sigma}{\sqrt{2\pi}}\left(e^{-\mu_i^2/(2\sigma^2)} - e^{-(1-\mu_i)^2/(2\sigma^2)}\right) + (\mu_i - 1)\,\Phi\!\left(\frac{1-\mu_i}{\sigma}\right) - \mu_i\, \Phi\!\left(\frac{-\mu_i}{\sigma}\right) + 1,
+\end{equation}
+where $\Phi$ is the standard normal CDF.
+Using the analytical expectation rather than a Monte Carlo estimate provides smooth gradients for $\mu_i$ even when $z_i$ is clamped to 0 or 1, which stabilises training.
+
+The regularisation parameter $\lambda > 0$ controls the trade-off between reconstruction fidelity and robustness.
+A large $\lambda$ pushes all gates toward 1, recovering a standard autoencoder.
+A small $\lambda$ allows the model to exclude more samples, increasing robustness but potentially discarding useful training signal.
+
+Per-sample reconstruction errors are clamped to $10^6$ to prevent overflow: when a gate drifts to zero, the backbone receives no gradient for that sample, its reconstruction error can grow unboundedly, and the product $0 \cdot \infty$ produces NaN under IEEE~754 arithmetic.
+
+\paragraph{Training.}
+The Adam optimiser with learning rate $\eta = 10^{-4}$ and batch size 64 is used, with early stopping on the validation loss (patience $P = 20$).
+On each new training day, the gate vector $\boldsymbol{\mu}$ is re-initialised to 0.5 for all samples in the current day's training set, because $\boldsymbol{\mu}$ has one entry per training sample and the sample count changes across days.
+The backbone weights are carried over from the previous day.
+
+\subsubsection{Lambda Tuning}\label{subsubsec:models:lambda}
+
+The PRAE paper~\cite{lindenbaum2022prae} does not prescribe a specific $\lambda$ selection procedure; it treats $\lambda$ as a hyperparameter to be set based on a contamination-level estimate.
+Our implementation uses a two-stage approach.
+
+On the first training day, an initial $\lambda_{\text{heuristic}}$ is computed from the average energy of the training data:
+\begin{equation}
+  \label{eq:lambda_heuristic}
+  \lambda_{\text{heuristic}} = \overline{\|\mathbf{x}\|^2} \cdot k \cdot d,
+\end{equation}
+where $\overline{\|\mathbf{x}\|^2}$ is the mean squared magnitude per element over a sample of training batches.
+A grid search is then run over the multiplicative factors $\{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0\}$, training a fresh PRAE for 15 epochs for each candidate $\lambda = f \cdot \lambda_{\text{heuristic}}$.
+The factor that minimises the validation reconstruction loss (without gates) is selected.
+
+On subsequent training days (day 2 onward), the backbone is already partially trained, so the raw-energy heuristic overestimates the reconstruction scale.
+The selected $\lambda$ from day 1 is retained for all subsequent days without re-tuning.
+
+\paragraph{Anomaly scoring.}
+At inference, the stochastic gates are absent: the PRAE reduces to a standard autoencoder.
+The anomaly score for a test subsequence $\mathbf{S}_t$ is the per-sample squared reconstruction error:
+\begin{equation}
+  \label{eq:prae_score}
+  s_t = \left\|\mathbf{S}_t - \hat{\mathbf{S}}_t\right\|^2.
+\end{equation}
+High values indicate that the input deviates from the learned reconstruction manifold, which was fit to clean data thanks to the gating mechanism during training.
+
+\begin{table}[H]
+\centering
+\caption{Hyperparameters of the Probabilistic Robust Autoencoder.}
+\label{tab:prae_hyperparams}
+\begin{tabular}{llll}
+\toprule
+\textbf{Parameter} & \textbf{Symbol} & \textbf{Value} & \textbf{Source} \\
+\midrule
+Backbone & --- & Bottleneck Transformer (Table~\ref{tab:tae_ocsvm_hyperparams}) & Empirical \\
+Gate noise scale & $\sigma$ & 0.5 & Lindenbaum et~al.~\cite{lindenbaum2022prae} \\
+Gate initialisation & $\mu_i$ & 0.5 & Empirical \\
+$\lambda$ selection & --- & Grid search (7 factors $\times$ 15 epochs) & Empirical \\
+Reconstruction clamp & --- & $10^6$ & Empirical \\
+Optimiser & --- & Adam & Empirical \\
+Learning rate & $\eta$ & $10^{-4}$ & Empirical \\
+Max epochs & $E$ & 1{,}000 & Empirical \\
+Early stopping patience & $P$ & 20 & Empirical \\
+Batch size & $|\mathcal{B}|$ & 64 & Empirical \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \section{Anomaly Thresholding}\label{sec:method:thresholds}
 % [CONTENT] Overview: raw anomaly scores must be converted to binary

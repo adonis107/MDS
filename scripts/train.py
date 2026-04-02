@@ -26,7 +26,7 @@ import joblib
 
 from detection.data.loaders import create_sequences, load_processed, scale_and_create_loaders
 from detection.data.preprocessing import split_first_hour_blocks
-from detection.data.scalers import scaler as QuantileScaler
+from detection.data.scalers import EmpiricalBoxCoxScaler
 from detection.models.hybrid import TransformerOCSVM
 from detection.models.prae import calculate_heuristic_lambda, grid_search_lambda
 from detection.trainers.checkpoint import (
@@ -123,7 +123,7 @@ for model_type in MODEL_TYPES:
     logger.info("=" * 80)
 
     model, detector = None, None
-    scaler = QuantileScaler()
+    scaler = EmpiricalBoxCoxScaler()
     feature_names = None
     scaler_fitted = False
     prae_lambda = None

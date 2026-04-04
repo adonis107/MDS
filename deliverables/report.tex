@@ -321,10 +321,12 @@ RFDR adapts the Benjamini-Hochberg procedure to a streaming setting by maintaini
 Within each window, scores are log-transformed, converted to robust z-scores using the median absolute deviation, and mapped to p-values under a Gaussian assumption; the BH procedure then determines a dynamic threshold that controls the false discovery rate at level~$\alpha$.
 Because the null distribution is re-estimated at every step from the local window, RFDR tracks non-stationarity in the score distribution without requiring an explicit drift model.
 
-\paragraph{Implicit Model Thresholds.}
-Some detection methods produce a threshold as a byproduct of training rather than as a post-hoc step.
-The OC-SVM decision boundary, for instance, defines an implicit threshold in the feature space: points with negative decision function values are classified as anomalous.
-This is both a strength (the threshold is jointly optimised with the model) and a weakness (the threshold is not interpretable independently of the model and cannot be recalibrated without retraining).
+\paragraph{Implicit and Post-Hoc Model Thresholds.}
+Some detection methods appear to produce a threshold as a byproduct of training.
+The OC-SVM decision boundary, for instance, defines a binary classification in the feature space: points with negative decision function values are labelled as outliers.
+However, in practice this binary output is often discarded in favour of a continuous dissimilarity score, and a separate threshold is selected post-hoc on labelled evaluation data.
+Poutr\'e et~al.~\cite{poutre_2024} follow this approach, choosing the threshold that maximises the $F_4$-score on a test set containing synthetic manipulations.
+This converts an ostensibly unsupervised method into one that depends on labelled data for threshold calibration.
 
 \section{Feature Attribution Methods}\label{sec:background:attribution}
 
@@ -642,7 +644,8 @@ The diversity of approaches is intentional: reconstruction-based, density-estima
 \subsection{Transformer Bottleneck Autoencoder with One-Class SVM}\label{subsec:models:tfocsvm}
 
 This detector follows the two-stage framework of Poutr\'e et~al.~\cite{poutre_2024}: a Transformer bottleneck autoencoder is trained to reconstruct LOB feature sequences, then its encoder is frozen and a One-Class SVM is fitted on the bottleneck representations.
-The anomaly score is the negated OC-SVM decision function, so that higher values indicate greater anomalousness.
+The anomaly score is a dissimilarity score derived from the OC-SVM decision function: for each input subsequence, the score measures how far the learned representation lies from the support of normal data (higher values indicate greater anomalousness).
+Converting this continuous score into a binary detection decision requires a threshold; the threshold selection procedure and its limitations are discussed in Section~\ref{sec:method:thresholds}.
 
 \paragraph{Encoder.}
 The input to the encoder is a subsequence $\mathbf{S}_t \in \mathbb{R}^{k \times d}$, where $k$ is the sequence length and $d$ the number of features.
@@ -915,7 +918,7 @@ The regularisation parameter $\lambda > 0$ controls the trade-off between recons
 A large $\lambda$ pushes all gates toward 1, recovering a standard autoencoder.
 A small $\lambda$ allows the model to exclude more samples, increasing robustness but potentially discarding useful training signal.
 
-Per-sample reconstruction errors are clamped to $10^6$ to prevent overflow: when a gate drifts to zero, the backbone receives no gradient for that sample, its reconstruction error can grow unboundedly, and the product $0 \cdot \infty$ produces NaN under IEEE~754 arithmetic.
+Per-sample reconstruction errors are clamped to $10^6$ to prevent overflow: when a gate drifts to zero, the backbone receives no gradient for that sample, its reconstruction error can grow unboundedly, and the product $0 \cdot \infty$ produces NaN.
 
 \paragraph{Training.}
 The Adam optimiser with learning rate $\eta = 10^{-4}$ and batch size 64 is used, with early stopping on the validation loss (patience $P = 20$).
@@ -975,12 +978,46 @@ Batch size & $|\mathcal{B}|$ & 64 & Empirical \\
 
 \section{Anomaly Thresholding}\label{sec:method:thresholds}
 
-Each detection model outputs a scalar anomaly score $s_t \in \mathbb{R}$ at every time step $t$.
-A detection is triggered when $s_t$ exceeds a threshold $\tau_t$, producing the binary indicator $\mathbf{1}[s_t > \tau_t]$.
-The choice of $\tau_t$ governs the trade-off between false positives and detection power.
-A fixed threshold is inadequate because anomaly score distributions are non-stationary: volatility regimes shift within and across sessions, market microstructure changes between instruments, and the score baselines of different models drift over time.
-The three methods below address this from different angles: static extreme value fitting (POT), streaming extreme value updating (SPOT, DSPOT), and rolling multiple-testing control (RFDR).
-Throughout, $s_t$ denotes the anomaly score at time $t$ and $\tau_t$ denotes the (possibly time-varying) threshold.
+Each of the three detection models produces a scalar anomaly score at every time step, but the relationship between that score and a detection decision differs fundamentally across models.
+
+The probabilistic neural network of Fabre and Challet~\cite{fabre_2025} outputs a full conditional distribution over future price moves, from which a spoofing gain~$\Delta\mathcal{C}$ is computed at each time step.
+A positive gain indicates that a rational spoofer could profit from the current book state; the sign of the gain therefore serves as a natural detection threshold.
+More generally, the negative log-likelihood of the realised price move under the predicted distribution provides a probability-calibrated anomaly score whose magnitude can be interpreted directly.
+Thresholding is implicit in the model design: the economic framework supplies it.
+
+The Transformer autoencoder of Poutr\'e et~al.~\cite{poutre_2024} pairs its reconstruction with a One-Class SVM trained on the bottleneck representations.
+The OC-SVM produces a continuous dissimilarity score for each input subsequence, defined as a modification of the OC-SVM decision function that measures how far the learned representation lies from the support of normal data.
+A threshold~$\tau$ is then applied to this score to produce a binary detection decision.
+Crucially, $\tau$ is not learned during training and is not a direct output of the OC-SVM's own decision boundary (which is controlled by~$\nu$).
+Instead, $\tau$ is selected post-hoc by sweeping over candidate values and choosing the one that maximises the $F_4$-score on a labelled evaluation set containing synthetically injected manipulations.
+
+\paragraph{Critical remark.}
+The $F_\beta$-score is defined as
+\begin{equation*}
+  F_\beta = (1 + \beta^2) \cdot \frac{\mathrm{precision} \cdot \mathrm{recall}}{\beta^2 \cdot \mathrm{precision} + \mathrm{recall}}.
+\end{equation*}
+With $\beta = 4$, recall is weighted sixteen times more heavily than precision ($\beta^2 = 16$).
+This means the threshold is selected to minimise missed detections, at the cost of accepting a high false positive rate.
+For a market surveillance system that must act on every flagged event, the cost of false positives is not negligible: each flag triggers manual investigation, and a high false positive rate degrades analyst efficiency and trust in the system.
+
+Optimising $\tau$ against an $F_4$-score requires ground-truth manipulation labels.
+In real deployment settings, such labels are either unavailable (equity markets with no public order-level annotations) or unreliable (cryptocurrency markets where manipulation is not prohibited and thus not labelled).
+The procedure is therefore not directly applicable to the unsupervised detection setting that motivates this project.
+
+Furthermore, if $\tau$ is selected by sweeping on the same labelled set used to report detection results, the reported performance is optimistic: the threshold has been tuned to the evaluation data.
+Poutr\'e et~al.~\cite{poutre_2024} select $\tau$ by maximising the $F_4$-score on the test set containing their synthetic manipulations, and then report detection metrics on that same test set.
+This is a methodological concern that should be noted when interpreting any comparison against their reported numbers.
+
+The Probabilistic Robust Autoencoder (PRAE) of Lindenbaum et~al.~\cite{lindenbaum2022prae} learns per-sample gates during training that downweight suspected anomalies, but these gates are not available for new, unseen test data.
+At inference time, the only available signal is the reconstruction score (e.g.\ the negative log-likelihood or the squared reconstruction error).
+The paper does not specify a procedure for converting this score into a binary detection decision: no threshold selection method is proposed.
+
+Both the Transformer+OC-SVM and the PRAE therefore lack a principled, label-free threshold selection procedure.
+The three methods below address this gap.
+POT and SPOT/DSPOT provide statistically principled false positive rate control under a Generalised Pareto tail model; the rolling FDR controls the expected proportion of false detections in a streaming setting.
+These methods select thresholds using only the statistical properties of the score distribution, without access to labels, which is precisely the setting of this project.
+They may also serve as drop-in replacements for the spoofing gain threshold in the PNN, decoupling the scoring and thresholding components and allowing a uniform evaluation framework across all three models.
+Throughout, $s_t$ denotes the anomaly score at time $t$, $\tau_t$ denotes the (possibly time-varying) threshold, and a detection is triggered when $s_t > \tau_t$, producing the binary indicator $\mathbf{1}[s_t > \tau_t]$.
 
 \subsection{Peak Over Threshold}\label{sec:method:thresholds:pot}
 
@@ -1033,6 +1070,12 @@ POT is a batch method: it fits the GPD on a fixed set of scores and produces a s
 This is appropriate when the score distribution is stationary across the calibration and test periods, but it cannot adapt to non-stationarity.
 
 \subsection{SPOT and DSPOT}\label{sec:method:thresholds:spot}
+
+\paragraph{Implementation note.}
+The SPOT and DSPOT implementations used in this project are taken directly from the source code released by Siffer et~al.~\cite{siffer:hal-01640325} alongside their paper.
+They were not reimplemented from scratch.
+As a result, any deviation between the code and the algorithmic descriptions in Section~\ref{sec:method:thresholds:spot} reflects choices made in Siffer et~al.'s own implementation, not modifications introduced in this project.
+The descriptions below follow the code as released; where the code and the paper differ, both are noted.
 
 \paragraph{SPOT (Streaming Peak Over Threshold).}
 SPOT~\cite{siffer:hal-01640325} extends POT to a streaming setting by maintaining a running tail model and updating the threshold as new scores arrive.
@@ -1163,16 +1206,93 @@ MAD consistency constant & --- & 1.4826 & Exact under normality \\
 \end{table}
 
 \section{Spoofing Gain Estimation}\label{sec:method:spoofing}
-% [CONTENT] From Fabre \& Challet (2025): define the expected cost of a
-% trade with and without spoofing. A rational spoofer places a genuine order
-% of size $q$ at distance $\delta_a$ and a spoof order of size $Q$ at
-% distance $\delta_b$ on the opposite side. The spoofing gain is
-% $\Delta\mathcal{C} = \mathbb{E}[C(0, \delta_a, 0, q) \mid x_0] - \mathbb{E}[C(\delta_b, \delta_a, Q, q) \mid x]$.
-% The conditional expectations use the PNN-predicted skew-normal parameters
-% and involve CDF evaluations and conditional moments. State the formulas for
-% $P(\text{fill})$, $\mathbb{E}[\Delta p \mid \Delta p > \text{thresh}]$, and
-% the four cost terms. Positive gain means spoofing is profitable at that
-% point in time.
+
+The spoofing gain is the central quantity that connects the PNN's distributional predictions (Section~\ref{subsec:models:pnn}) to the detection of manipulative intent.
+It serves two roles in the pipeline: it defines the detection signal for the PNN model (a positive gain flags a book state where spoofing would be profitable), and it provides an economically interpretable complement to the statistical anomaly scores produced by the Transformer+OC-SVM and PRAE models.
+This section consolidates the formal framework introduced in Section~\ref{subsec:models:pnn}, describes how the gain is computed in practice, and documents the parameter choices and edge-case handling in the implementation.
+
+\paragraph{Strategy and assumptions.}
+The framework of Fabre and Challet~\cite{fabre_2025} models a manipulative agent who wants to execute a genuine trade of size~$q$ on one side of the book.
+To improve her execution price, she simultaneously places a non-bona-fide order of size $Q \gg q$ on the opposite side at distance~$\delta_b$ from the best quote, inflating the perceived liquidity and shifting the predicted mid-price distribution in her favour.
+Three assumptions govern the model.
+First, no partial fills occur: at the trading horizon, each order is either completely filled or untouched.
+Second, execution is triggered by a first-passage criterion: the bid order fills if $\Delta p < -(\delta_b + s_t/2)$ and the ask order fills if $\Delta p > \delta_a + s_t/2$, where $\Delta p$ is the mid-price move over the horizon and $s_t$ is the bid-ask spread.
+Third, the agent must execute her target quantity within the horizon: if the genuine order is not filled, she crosses the spread at a taker fee~$\varepsilon^-$; if the spoof order is filled inadvertently, she liquidates the resulting inventory at market.
+
+\paragraph{Gain definition.}
+For a seller, the spoofing gain $G_t$ is the reduction in expected execution cost achieved by the spoof order (Equation~\eqref{eq:spoofing_gain}):
+\begin{equation*}
+  G_t = \underbrace{\mathbb{E}\!\bigl[C^a_{\text{spoof}}(0, \delta_a, 0, q) \mid \mathbf{x}^0_t\bigr]}_{\text{cost without spoofing}} - \underbrace{\mathbb{E}\!\bigl[C^a_{\text{spoof}}(\delta_b, \delta_a, Q, q) \mid \mathbf{x}_t\bigr]}_{\text{cost with spoofing}},
+\end{equation*}
+where $\mathbf{x}^0_t$ and $\mathbf{x}_t$ denote the feature vectors without and with the spoof order.
+The cost function $C^a_{\text{spoof}}$ decomposes into four terms (Equation~\eqref{eq:expected_cost}): (1)~revenue from the filled genuine ask order, weighted by the maker fee~$\varepsilon^+$; (2)~cost of the inadvertently filled spoof bid order; (3)~cost of liquidating the unfilled genuine order by crossing the spread; and (4)~cost of liquidating the filled spoof order's inventory at market.
+Each term involves a fill probability $P(\Delta p \gtrless \tau)$ and a conditional expectation $\mathbb{E}[\Delta p \mid \Delta p \gtrless \tau]$, where the threshold $\tau$ depends on the order distance and the spread.
+These quantities are evaluated analytically from the PNN-predicted skew-normal parameters $(\mu_t, \sigma_t, \alpha_t)$ using the closed-form expressions for the skew-normal CDF~$F_\alpha$ and truncated first moments (Equations~35--37 of Fabre and Challet~\cite{fabre_2025}):
+\begin{align}
+  P(\Delta p \leq x) &= F_\alpha\!\left(\frac{x - \mu}{\sigma}\right), \label{eq:skewnorm_cdf} \\[4pt]
+  \mathbb{E}[\Delta p \mid \Delta p \leq x] &= \mu + \sigma\,\frac{\sqrt{2/\pi}\,\beta\,\Phi\!\bigl(\sqrt{1+\alpha^2}\,\tfrac{x-\mu}{\sigma}\bigr) - e^{-\frac{1}{2}\left(\frac{x-\mu}{\sigma}\right)^2}\Phi\!\bigl(\alpha\,\tfrac{x-\mu}{\sigma}\bigr)}{F_\alpha\!\bigl(\tfrac{x-\mu}{\sigma}\bigr)}, \label{eq:skewnorm_truncmean}
+\end{align}
+where $\beta = \alpha / \sqrt{1 + \alpha^2}$ and $\Phi$ is the standard normal CDF.
+The conditional expectation $\mathbb{E}[\Delta p \mid \Delta p > x]$ follows by symmetry.
+This makes $G_t$ fully computable from a single order book snapshot and the PNN output, with no simulation or numerical integration required.
+
+The framework is symmetric for a buyer: she places the genuine order on the bid side at distance~$\delta_b$ and the spoof order on the ask side at distance~$\delta_a$, with the corresponding cost function $C^b_{\text{spoof}}$ defined in Equation~(28) of Fabre and Challet~\cite{fabre_2025}.
+In this project, the gain is evaluated from the ask side (seller perspective); the bid-side gain follows by the same construction with reversed roles.
+
+\paragraph{Detection rule.}
+$G_t > 0$ indicates that spoofing is, in expectation, profitable at time~$t$: the cost reduction from the artificially induced price move exceeds the risk of the spoof order being filled.
+Fabre and Challet~\cite{fabre_2025} use this condition directly as their detection rule, labelling as suspicious all large orders ($Q \geq 4{,}500$~USD) for which $G_t > 0$.
+There is no transformation of the raw gain into a probability or score in $[0,1]$: the gain is a signed real-valued signal whose magnitude reflects the expected profitability of the hypothetical spoof.
+
+\paragraph{Computation pipeline.}
+The PNN is not trained on spoofing gain labels.
+Its training objective is the negative log-likelihood of the skew-normal distribution (Equation~\eqref{eq:pnn_loss}), which teaches the network to predict the conditional distribution of mid-price moves from order flow features.
+The gain is computed post-hoc: for each time step~$t$, the PNN predicts $(\mu_t, \sigma_t, \alpha_t)$, and the cost function~\eqref{eq:expected_cost} is evaluated twice, once with spoofing parameters $(Q, \delta_b)$ and once with $(Q{=}0, \delta_b{=}0)$.
+The difference yields $G_t$.
+
+Table~\ref{tab:spoofing_params} lists the parameters used in the gain computation.
+The values of $Q$, $q$, $\delta_a$, $\varepsilon^+$, and $\varepsilon^-$ follow Fabre and Challet~\cite{fabre_2025}.
+The spoof distance $\delta_b = 0.01$ places the non-bona-fide order roughly 100~basis points from the best bid, matching the deepest distance in the sensitivity grid of Fabre and Challet (who vary $\delta$ over $\{0, 1, 10, 100\}$~bps).
+All parameters are fixed across the entire evaluation period; none are estimated from data.
+
+\begin{table}[H]
+\centering
+\caption{Parameters of the spoofing gain computation.}
+\label{tab:spoofing_params}
+\begin{tabular}{llll}
+\toprule
+\textbf{Parameter} & \textbf{Symbol} & \textbf{Value} & \textbf{Source} \\
+\midrule
+Spoof order size & $Q$ & 4{,}500 & Fabre and Challet~\cite{fabre_2025} \\
+Genuine order size & $q$ & 100 & Fabre and Challet~\cite{fabre_2025} \\
+Genuine order distance & $\delta_a$ & 0 & Fabre and Challet~\cite{fabre_2025} \\
+Spoof order distance & $\delta_b$ & 0.01 & Empirical \\ % TODO: no systematic justification; matches deepest grid point in the paper
+Maker fee & $\varepsilon^+$ & 0 & Fabre and Challet~\cite{fabre_2025} \\
+Taker fee & $\varepsilon^-$ & 0.05 & Fabre and Challet~\cite{fabre_2025} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Edge cases.}
+Several degenerate configurations require special handling.
+When the bid-ask spread is zero or negative (a crossed book), the fill thresholds $\delta_a + s_t/2$ and $\delta_b + s_t/2$ collapse, making the cost function numerically unstable.
+The implementation floors the spread at $10^{-4}$ to prevent this.
+When the predicted scale $\sigma_t$ is near zero, the skew-normal CDF evaluations become degenerate; the Softplus activation in the PNN output layer (Equation~\eqref{eq:pnn_sigma}) prevents $\sigma_t$ from reaching exactly zero, and the conditional expectation functions add $10^{-10}$ to CDF denominators to guard against residual underflow.
+No clipping is applied to the computed gain: extreme positive or negative values are retained.
+The paper does not discuss any of these edge cases.
+
+\paragraph{Implementation note.}
+The full gain computation of Equation~\eqref{eq:spoofing_gain} requires two forward passes through the PNN: one with the feature vector~$\mathbf{x}_t$ containing the observed order and one with the counterfactual vector~$\mathbf{x}^0_t$ obtained by removing the order's contribution to the Hawkes features.
+This is feasible when individual order insertions are observed (Level-3 data), but not with our Level-2 snapshots, which record only aggregate volume at each price level.
+Accordingly, the implementation evaluates the cost-function counterfactual using a single set of PNN-predicted parameters $(\mu_t, \sigma_t, \alpha_t)$: the no-spoof cost sets $Q = 0$ and $\delta_b = 0$, while the with-spoof cost uses the actual parameter values.
+This captures the mechanical effect of different fill thresholds but does not capture the distributional shift that the spoof order would induce in the Hawkes features and hence in the predicted $(\mu_t, \sigma_t, \alpha_t)$.
+The result is a conservative estimate of the true gain, because the price-impact channel through which the spoof order shifts~$\mu_t$ in the spoofer's favour is absent.
+
+\paragraph{Relationship to thresholding.}
+The spoofing gain provides a natural, economically motivated threshold: $G_t > 0$ defines the boundary between book states where spoofing is profitable and states where it is not.
+For the PNN, this threshold is implicit in the model's output and requires no additional calibration.
+The EVT-based (POT, SPOT, DSPOT) and rolling FDR methods described in Section~\ref{sec:method:thresholds} can alternatively be applied to the raw gain series, treating it as an anomaly score and selecting a threshold that controls the tail probability or false discovery rate.
+This enables a uniform evaluation framework across all three models, where the threshold is decoupled from the scoring function.
 
 \section{Interpretability}\label{sec:method:interpretability}
 

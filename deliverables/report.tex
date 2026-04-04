@@ -645,7 +645,7 @@ The diversity of approaches is intentional: reconstruction-based, density-estima
 
 This detector follows the two-stage framework of Poutr\'e et~al.~\cite{poutre_2024}: a Transformer bottleneck autoencoder is trained to reconstruct LOB feature sequences, then its encoder is frozen and a One-Class SVM is fitted on the bottleneck representations.
 The anomaly score is a dissimilarity score derived from the OC-SVM decision function: for each input subsequence, the score measures how far the learned representation lies from the support of normal data (higher values indicate greater anomalousness).
-Converting this continuous score into a binary detection decision requires a threshold; the threshold selection procedure and its limitations are discussed in Section~\ref{sec:method:thresholds}.
+Converting this continuous score into a binary detection decision requires a threshold; the threshold selection procedure and its limitations are discussed in Section~\ref{sec:methodology:thresholds}.
 
 \paragraph{Encoder.}
 The input to the encoder is a subsequence $\mathbf{S}_t \in \mathbb{R}^{k \times d}$, where $k$ is the sequence length and $d$ the number of features.
@@ -976,7 +976,7 @@ Batch size & $|\mathcal{B}|$ & 64 & Empirical \\
 \end{tabular}
 \end{table}
 
-\section{Anomaly Thresholding}\label{sec:method:thresholds}
+\section{Anomaly Thresholding}\label{sec:methodology:thresholds}
 
 Each of the three detection models produces a scalar anomaly score at every time step, but the relationship between that score and a detection decision differs fundamentally across models.
 
@@ -1019,7 +1019,7 @@ These methods select thresholds using only the statistical properties of the sco
 They may also serve as drop-in replacements for the spoofing gain threshold in the PNN, decoupling the scoring and thresholding components and allowing a uniform evaluation framework across all three models.
 Throughout, $s_t$ denotes the anomaly score at time $t$, $\tau_t$ denotes the (possibly time-varying) threshold, and a detection is triggered when $s_t > \tau_t$, producing the binary indicator $\mathbf{1}[s_t > \tau_t]$.
 
-\subsection{Peak Over Threshold}\label{sec:method:thresholds:pot}
+\subsection{Peak Over Threshold}\label{sec:methodology:thresholds:pot}
 
 \paragraph{Theoretical foundation.}
 The Pickands-Balkema-de Haan theorem~\cite{balkema1974residual,pickands1975statistical} guarantees that, for a wide class of distributions, the excess of a random variable above a sufficiently high threshold~$u$ converges in distribution to a Generalised Pareto Distribution (GPD).
@@ -1069,12 +1069,12 @@ This formula follows directly from inverting the GPD survival function at probab
 POT is a batch method: it fits the GPD on a fixed set of scores and produces a single threshold that does not change at inference time.
 This is appropriate when the score distribution is stationary across the calibration and test periods, but it cannot adapt to non-stationarity.
 
-\subsection{SPOT and DSPOT}\label{sec:method:thresholds:spot}
+\subsection{SPOT and DSPOT}\label{sec:methodology:thresholds:spot}
 
 \paragraph{Implementation note.}
 The SPOT and DSPOT implementations used in this project are taken directly from the source code released by Siffer et~al.~\cite{siffer:hal-01640325} alongside their paper.
 They were not reimplemented from scratch.
-As a result, any deviation between the code and the algorithmic descriptions in Section~\ref{sec:method:thresholds:spot} reflects choices made in Siffer et~al.'s own implementation, not modifications introduced in this project.
+As a result, any deviation between the code and the algorithmic descriptions in Section~\ref{sec:methodology:thresholds:spot} reflects choices made in Siffer et~al.'s own implementation, not modifications introduced in this project.
 The descriptions below follow the code as released; where the code and the paper differ, both are noted.
 
 \paragraph{SPOT (Streaming Peak Over Threshold).}
@@ -1144,7 +1144,7 @@ DSPOT window depth & $d$ & 50 & Empirical (paper uses 200) \\ % TODO: no justifi
 \end{tabular}
 \end{table}
 
-\subsection{Rolling False Discovery Rate}\label{sec:method:thresholds:rfdr}
+\subsection{Rolling False Discovery Rate}\label{sec:methodology:thresholds:rfdr}
 
 \paragraph{FDR control background.}
 The Benjamini-Hochberg (BH) procedure~\cite{benjamini1995controlling} controls the false discovery rate (FDR), defined as the expected proportion of false positives among all rejected hypotheses.
@@ -1205,7 +1205,7 @@ MAD consistency constant & --- & 1.4826 & Exact under normality \\
 \end{tabular}
 \end{table}
 
-\section{Spoofing Gain Estimation}\label{sec:method:spoofing}
+\section{Spoofing Gain Estimation}\label{sec:methodology:spoofing}
 
 The spoofing gain is the central quantity that connects the PNN's distributional predictions (Section~\ref{subsec:models:pnn}) to the detection of manipulative intent.
 It serves two roles in the pipeline: it defines the detection signal for the PNN model (a positive gain flags a book state where spoofing would be profitable), and it provides an economically interpretable complement to the statistical anomaly scores produced by the Transformer+OC-SVM and PRAE models.
@@ -1291,44 +1291,215 @@ The result is a conservative estimate of the true gain, because the price-impact
 \paragraph{Relationship to thresholding.}
 The spoofing gain provides a natural, economically motivated threshold: $G_t > 0$ defines the boundary between book states where spoofing is profitable and states where it is not.
 For the PNN, this threshold is implicit in the model's output and requires no additional calibration.
-The EVT-based (POT, SPOT, DSPOT) and rolling FDR methods described in Section~\ref{sec:method:thresholds} can alternatively be applied to the raw gain series, treating it as an anomaly score and selecting a threshold that controls the tail probability or false discovery rate.
+The EVT-based (POT, SPOT, DSPOT) and rolling FDR methods described in Section~\ref{sec:methodology:thresholds} can alternatively be applied to the raw gain series, treating it as an anomaly score and selecting a threshold that controls the tail probability or false discovery rate.
 This enables a uniform evaluation framework across all three models, where the threshold is decoupled from the scoring function.
 
-\section{Interpretability}\label{sec:method:interpretability}
+\section{Interpretability}\label{sec:methodology:interpretability}
 
-\subsection{Integrated Gradients}\label{sec:method:interp:ig}
-% [CONTENT] Given a model $f$, an input $x$, and a baseline $x'$ (zeros),
-% the attribution for feature $i$ is
-% $\text{IG}_i(x) = (x_i - x'_i) \int_0^1 \frac{\partial f(x' + \alpha(x - x'))}{\partial x_i}\,d\alpha$.
-% Approximated with $n=50$ Riemann steps. For PNN, the target function is
-% $\sigma$ (scale parameter); for PRAE, it is the reconstruction error.
-% Discuss why IG satisfies completeness and sensitivity.
+Each of the three detection models produces a scalar anomaly score per time step (Section~\ref{sec:methodology:models}).
+A score alone is not actionable: a market surveillance analyst needs to know which features of the order book drove a high score before deciding whether to escalate.
+Two complementary attribution methods are used.
+Integrated Gradients~\cite{sundararajan2017axiomaticattributiondeepnetworks} provides a fine-grained, gradient-based attribution at the level of individual features (and individual time steps within the sequence window).
+Grouped Occlusion provides a coarser but more robust attribution at the level of feature groups, which maps directly to the domain concepts introduced in Section~\ref{sec:methodology:features}: imbalance, volatility, Hawkes flow, OFI, dynamics, and so on.
 
-\subsection{Grouped Occlusion}\label{sec:method:interp:occlusion}
-% [CONTENT] For the Transformer+OC-SVM detector, end-to-end gradients cannot
-% flow through the OC-SVM. Instead, features are grouped (by type, by
-% bid/ask side, by level) and each group is replaced with its mean value.
-% The anomaly score drop $\Delta s = s(x) - s(\text{mask}(x, \mathcal{G}))$
-% measures the group's contribution. Describe the batched implementation
-% (original + one ablation per group in a single forward pass).
+\subsection{Integrated Gradients}\label{sec:methodology:interp:ig}
 
-\section{Post-Hoc Analysis}\label{sec:method:posthoc}
+\paragraph{Motivation.}
+The simplest gradient-based attribution assigns to each input feature $x_i$ the product $x_i \cdot \partial f / \partial x_i$ evaluated at the input point.
+This approach fails when the model saturates: if the prediction function flattens at the input, the gradient is near zero even for features that were essential to the prediction.
+Sundararajan et~al.~\cite{sundararajan2017axiomaticattributiondeepnetworks} demonstrate this failure concretely for ReLU networks and propose Integrated Gradients (IG) as a principled alternative that integrates gradients along a straight-line path from a baseline input $\mathbf{x}'$ to the actual input $\mathbf{x}$, eliminating the dependence on the local gradient at a single point.
 
-\subsection{Anomaly Clustering}\label{sec:method:posthoc:clustering}
-% [CONTENT] MinMax-normalise the three anomaly scores (OC-SVM, PNN gain,
-% PRAE reconstruction error). Select events flagged by at least one model.
-% Apply HDBSCAN with minimum cluster size proportional to anomaly count.
-% Evaluate with Silhouette score and Davies-Bouldin index. Profile each
-% cluster by dominant model, dominant time period, and top discriminating
-% features. PCA projection for visualisation.
+\paragraph{Formal definition.}
+Let $f : \mathbb{R}^d \to \mathbb{R}$ denote the scalar target function whose output is to be attributed, $\mathbf{x} \in \mathbb{R}^d$ the input, and $\mathbf{x}' \in \mathbb{R}^d$ the baseline.
+The integrated gradient for feature~$i$ is:
+\begin{equation}
+  \label{eq:ig}
+  \mathrm{IG}_i(\mathbf{x}) = (x_i - x'_i) \int_0^1 \frac{\partial f\!\bigl(\mathbf{x}' + \alpha(\mathbf{x} - \mathbf{x}')\bigr)}{\partial x_i}\, d\alpha.
+\end{equation}
+Two axioms established by Sundararajan et~al.\ distinguish IG from alternative methods.
 
-\subsection{Jump Analysis}\label{sec:method:posthoc:jumps}
-% [CONTENT] For each selected anomaly, extract a window of $\pm k$ events.
-% Compute: (a) Barndorff-Nielsen bipower variation to separate continuous
-% volatility from jumps, (b) Lo-MacKinlay variance ratio test, (c) CUSUM
-% change-point detection on feature trajectories, (d) Welch t-test comparing
-% feature distributions before vs.\ after the anomaly, (e) cross-feature
-% lead-lag correlation.
+\textit{Completeness.}
+The attributions sum exactly to the model-output difference:
+\begin{equation}
+  \label{eq:ig_completeness}
+  \sum_{i=1}^{d} \mathrm{IG}_i(\mathbf{x}) = f(\mathbf{x}) - f(\mathbf{x}').
+\end{equation}
+No attribution is lost or fabricated; every unit of score change is accounted for by the input features.
+
+\textit{Sensitivity.}
+If $\mathbf{x}$ and $\mathbf{x}'$ differ in exactly one feature~$i$ and $f(\mathbf{x}) \neq f(\mathbf{x}')$, then $\mathrm{IG}_i(\mathbf{x}) \neq 0$.
+This rules out the saturation failure mode of plain gradients, where a feature can receive zero attribution despite being the sole cause of a prediction change.
+
+Sundararajan et~al.\ further prove that IG is the unique symmetry-preserving path method satisfying completeness, sensitivity, implementation invariance, and linearity (Proposition~2 and Theorem~1 of~\cite{sundararajan2017axiomaticattributiondeepnetworks}).
+
+\paragraph{Approximation.}
+The integral in Equation~\eqref{eq:ig} is approximated by a Riemann sum over $m$ uniformly spaced interpolation steps:
+\begin{equation}
+  \label{eq:ig_approx}
+  \mathrm{IG}_i(\mathbf{x}) \approx (x_i - x'_i) \cdot \frac{1}{m} \sum_{k=1}^{m} \frac{\partial f\!\bigl(\mathbf{x}' + \tfrac{k}{m}(\mathbf{x} - \mathbf{x}')\bigr)}{\partial x_i}.
+\end{equation}
+Each step requires one forward and one backward pass through the model, so computation scales linearly in $m$.
+The implementation uses the trapezoidal rule (averaging adjacent gradient evaluations) for improved accuracy.
+The number of steps is set to $m = 50$, matching the recommendation in Sundararajan et~al.~\cite{sundararajan2017axiomaticattributiondeepnetworks}, who report that 20 to 300 steps suffice for convergence in practice.
+
+\paragraph{Baseline choice.}
+The baseline $\mathbf{x}'$ represents the ``absence of signal'' from which attributions are measured.
+The implementation uses the zero vector $\mathbf{x}' = \mathbf{0}$.
+Because the input features are standardised to zero mean and unit variance (Section~\ref{sec:methodology:features}), the zero baseline corresponds to the average market state across the training set, which is a natural reference point: attributions then measure how much each feature's deviation from its mean contributes to the anomaly score.
+
+\paragraph{Application in this project.}
+IG is applied to two models.
+For the PNN (Section~\ref{subsec:models:pnn}), the target function is the predicted scale parameter: $f(\mathbf{x}) = \sigma(\mathbf{x})$.
+High predicted volatility is a necessary condition for large spoofing gains, so attributing~$\sigma$ identifies which features inflate the model's uncertainty.
+For the PRAE (Section~\ref{subsec:models:prae}), the target function is the reconstruction error: $f(\mathbf{x}) = \| \mathbf{x} - \hat{\mathbf{x}} \|^2$, which is the anomaly score itself.
+
+IG is not applied to the Transformer+OC-SVM detector, because the OC-SVM decision function is a non-parametric kernel machine fitted to latent representations and gradients cannot flow from the OC-SVM score back through the encoder in a single differentiable computation graph.
+Grouped Occlusion (Section~\ref{sec:methodology:interp:occlusion}) addresses this gap.
+
+\begin{table}[H]
+\centering
+\caption{Integrated Gradients parameters.}
+\label{tab:ig_params}
+\begin{tabular}{llll}
+\toprule
+\textbf{Parameter} & \textbf{Symbol} & \textbf{Value} & \textbf{Source} \\
+\midrule
+Interpolation steps & $m$ & 50 & Sundararajan et~al.~\cite{sundararajan2017axiomaticattributiondeepnetworks} \\
+Baseline & $\mathbf{x}'$ & $\mathbf{0}$ & Standard (zero mean after standardisation) \\
+Integration rule & --- & Trapezoidal & Empirical \\
+Target (PNN) & $f$ & $\sigma(\mathbf{x})$ & Empirical \\
+Target (PRAE) & $f$ & $\| \mathbf{x} - \hat{\mathbf{x}} \|^2$ & Empirical \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+\subsection{Grouped Occlusion}\label{sec:methodology:interp:occlusion}
+
+Grouped Occlusion is a project-specific attribution method designed for the Transformer+OC-SVM detector, where gradient-based attribution is not applicable.
+It extends the standard single-feature occlusion paradigm by operating at the level of semantically defined feature groups, reducing noise from correlated features and producing attributions that map directly to the domain concepts of Section~\ref{sec:methodology:features}.
+
+\paragraph{Definition.}
+Let the input $\mathbf{x} \in \mathbb{R}^{T \times d}$ (a sequence of $T$ time steps with $d$ features) be partitioned into $K$ non-overlapping groups $\mathcal{G}_1, \ldots, \mathcal{G}_K$, where each group corresponds to a feature family (e.g., all imbalance features, all Hawkes features), a side of the book (bid, ask, or neutral), a price level, or a combination thereof.
+Let $\mathbf{x}^{(\setminus k)}$ denote the input with every feature in group~$\mathcal{G}_k$ replaced by its baseline value across all time steps.
+The occlusion attribution for group~$k$ is:
+\begin{equation}
+  \label{eq:occlusion}
+  \mathrm{Occ}_k(\mathbf{x}) = f(\mathbf{x}) - f\!\bigl(\mathbf{x}^{(\setminus k)}\bigr),
+\end{equation}
+where $f$ is the anomaly score function (the negated OC-SVM decision function).
+A positive $\mathrm{Occ}_k$ indicates that group~$k$ contributes to a higher anomaly score; removing it reduces the score.
+A negative value indicates that the group suppresses the score.
+
+\paragraph{Grouping criteria.}
+The implementation supports several grouping schemes: by feature type (imbalance, Hawkes, OFI, volatility, dynamics, spread, depth, etc.), by book side (bid, ask, neutral), by price level, or by combinations such as side$\times$type.
+In the experiments (Section~\ref{sec:results:sensitivity:occlusion}), two groupings are used: by feature type and by side.
+
+\paragraph{Baseline substitution.}
+The default baseline mode is the sequence mean: each occluded feature is replaced by its mean value across the $T$ time steps of the input sequence.
+This preserves the marginal distribution of the non-occluded features better than a zero baseline, which for standardised data would substitute the training-set mean rather than the sample-specific mean.
+
+\paragraph{Implementation note.}
+All $K$ occluded variants and the original input are stacked into a single batch of size $K + 1$, passed through the Transformer encoder in one forward call, and scored by the OC-SVM in one call to the decision function.
+This avoids the $K$-fold overhead of sequential evaluation and makes the computation tractable even for fine-grained groupings with $K > 20$.
+
+\paragraph{Critical remark.}
+Because each group is occluded independently (one group at a time), the attributions do not in general sum to $f(\mathbf{x}) - f(\mathbf{x}')$: interaction effects between groups are not captured.
+The completeness property~\eqref{eq:ig_completeness} that IG satisfies does not hold for single-group occlusion.
+A Shapley-value decomposition, which would average over all $2^K$ group subsets, would restore completeness but is computationally prohibitive for the grouping sizes used in practice.
+The single-group attributions should therefore be interpreted as first-order importance indicators rather than an exact decomposition of the score.
+
+\paragraph{Comparison to Integrated Gradients.}
+IG satisfies formal axioms (completeness, sensitivity, implementation invariance) and produces per-feature, per-time-step attributions, but it requires a differentiable end-to-end model and is sensitive to correlated features: when two features are redundant, IG may split credit between them in unintuitive ways~\cite{sundararajan2017axiomaticattributiondeepnetworks}.
+Grouped Occlusion is model-agnostic (applicable to any scoring function, including the OC-SVM dissimilarity score), aggregates over correlated features by design, and produces group-level attributions that are directly interpretable in domain terms.
+Its limitation is the absence of completeness and its blindness to within-group structure.
+The two methods are therefore complementary: IG is used where gradient access is available (PNN, PRAE) and Grouped Occlusion where it is not (Transformer+OC-SVM).
+
+\section{Post-Hoc Analysis}\label{sec:methodology:posthoc}
+
+The three detection models each produce a scalar anomaly score per event, but they encode different notions of abnormality: dissimilarity from normal LOB dynamics (Transformer+OC-SVM), estimated spoofing profitability (PNN), and departure from the learned data manifold (PRAE).
+Post-hoc analysis exploits this complementarity in two ways: clustering the anomaly scores to discover recurring anomaly typologies, and examining the microstructural dynamics around individual anomalies to characterise their market impact.
+
+\subsection{Anomaly Clustering}\label{sec:methodology:posthoc:clustering}
+
+\paragraph{Input representation.}
+Each event in the test set is represented by three anomaly scores: the OC-SVM decision function value from the Transformer+OC-SVM pipeline, the spoofing gain from PNN (Section~\ref{sec:methodology:spoofing}), and the reconstruction error from PRAE.
+An event qualifies as anomalous if at least one model flags it, yielding a set of $n_{\text{anom}}$ events.
+The three raw scores are independently normalised to $[0, 1]$ via min-max scaling over the full test set before restriction to the anomalous subset, so that each axis contributes equally to the distance computation.
+
+\paragraph{Clustering algorithm.}
+HDBSCAN~\cite{campello2013density}
+is applied to the $n_{\text{anom}} \times 3$ normalised score matrix.
+Unlike $k$-means, HDBSCAN does not require the number of clusters to be specified \textit{a priori} and can identify clusters of varying density, which is appropriate when different anomaly types have different prevalences.
+The minimum cluster size is set to
+\[
+    m_{\min} \;=\; \max\!\bigl(5,\; \min(500,\; \lfloor n_{\text{anom}} / 20 \rfloor)\bigr),
+\]
+% TODO: justify the divisor 20 and the cap 500
+ensuring that clusters are large enough to permit statistical profiling while adapting to the total anomaly count.
+The minimum-samples parameter is fixed at $15$. % TODO: justify min\_samples = 15
+Events that do not belong to any cluster are labelled as noise by HDBSCAN's built-in outlier mechanism.
+
+\paragraph{Cluster evaluation.}
+Two internal validity metrics are computed on the non-noise subset: the Silhouette score, which measures how similar each point is to its own cluster relative to the nearest neighbouring cluster, and the Davies-Bouldin index, which averages the ratio of within-cluster scatter to between-cluster separation.
+Higher Silhouette and lower Davies-Bouldin values indicate better-separated clusters.
+
+\paragraph{Cluster characterisation.}
+Each cluster is profiled along four axes.
+First, the \emph{per-model detection rate} records the fraction of the cluster's events that each model independently flags as anomalous.
+A cluster with a PNN detection rate $\geq 0.5$ is labelled ``spoofing-type''; clusters dominated by OC-SVM or PRAE detections are labelled ``general''.
+Second, the \emph{dominant trading period} is determined by the most frequent intraday period (first hour, rest of morning, afternoon, or American open) among the cluster's events.
+Third, the \emph{most discriminating feature} is identified as the feature whose cluster mean deviates most from the global anomaly mean, measured in units of the global standard deviation.
+Finally, a two-component PCA projection of the three-dimensional score space provides a visual summary of cluster geometry and overlap.
+
+\subsection{Jump Analysis}\label{sec:methodology:posthoc:jumps}
+
+Where clustering provides a global taxonomy of anomalies, jump analysis examines individual events at the microstructural level to characterise the price and order-book dynamics that coincide with detected anomalies.
+
+\paragraph{Anomaly selection.}
+A subset of anomalies is selected for detailed inspection using a three-tier priority scheme based on model agreement.
+Tier~1 selects events flagged by all three models (unanimous agreement), ranked by the sum of their min-max-normalised scores.
+If fewer than $N$ events are available, Tier~2 adds events with two-model agreement, and Tier~3 completes the budget with the highest-scoring event per model.
+The default budget is $N = 6$. % TODO: justify N = 6
+
+\paragraph{Context extraction.}
+For each selected anomaly at row index~$i$, a context window of $\pm 100$ events is extracted from the raw LOB data for price and volume diagnostics.
+A narrower window of $\pm 60$ events is used for feature trajectory analysis, where higher temporal resolution is needed.
+The sequence length of~$25$ events used by the detection models defines the mapping from sequence index back to the corresponding raw row in the daily file.
+
+\paragraph{Statistical jump tests.}
+Four complementary tests are applied to the context window around each anomaly.
+\begin{enumerate}
+    \item \textbf{Barndorff-Nielsen bipower variation}~\cite{Barndorff-Nielsen2004power}
+    decomposes the realised variance of log-returns into a continuous (diffusion) component and a jump component.
+    The bipower variation $\mathrm{BV} = \frac{\pi}{2} \sum_{i=2}^{n} |r_{i-1}| \, |r_i|$ is robust to jumps, so the difference $\mathrm{RV} - \mathrm{BV}$ isolates the jump contribution.
+    A rolling version with window $w = 20$ tracks the jump ratio $(\mathrm{RV} - \mathrm{BV}) / \mathrm{RV}$ over time. % TODO: justify w = 20
+
+    \item \textbf{Lo-MacKinlay variance ratio test}~\cite{lo1988stock}
+    compares the variance of $q$-period returns to $q$ times the variance of single-period returns.
+    Under a random walk, the variance ratio $\mathrm{VR}(q) = 1$; significant deviations indicate jumps ($\mathrm{VR} > 1$) or mean-reversion ($\mathrm{VR} < 1$).
+    The test is computed separately on the before and after segments with $q = 5$.
+
+    \item \textbf{CUSUM} (cumulative sum) tracks the running total of deviations of log-returns from their mean.
+    A sharp increase in the CUSUM statistic localises the onset of a regime change, and the index of maximum deviation identifies the most likely change-point.
+
+    \item \textbf{Welch $t$-test} is applied feature-by-feature to compare the distributions in the before window $[i - 60,\, i)$ and the after window $[i,\, i + 60]$.
+    The top $k = 8$ features with the largest absolute $z$-scores at the anomaly time are tested; significant $p$-values indicate a distributional shift that coincides with the detected anomaly.
+\end{enumerate}
+
+\paragraph{Cross-feature lead-lag analysis.}
+For each selected anomaly, the pairwise correlation matrix of feature changes is computed at lag zero, and a leading-indicator score is derived by averaging the absolute correlations of each feature with all others.
+Features whose changes precede correlated movements in other features may point to the originating signal behind the anomaly.
+
+\paragraph{Limitations.}
+The analysis is descriptive rather than causal: co-occurrence of a price jump and an anomaly flag does not establish that the anomaly caused the jump, nor that the jump is the sole explanation for the model's alert.
+The sample size ($N = 6$ per training year) is deliberately small to permit detailed visual inspection, but it precludes statistical generalisation.
+The bipower variation and variance ratio tests assume a semimartingale model for price dynamics, which may not hold at the highest frequencies where microstructure noise dominates.
+
+\bigskip
+
+This chapter has defined the complete methodological pipeline: feature engineering (Section~\ref{sec:methodology:features}), three detection models with complementary inductive biases (Section~\ref{sec:methodology:models}), anomaly thresholding via extreme value theory and false discovery rate control (Section~\ref{sec:methodology:thresholds}), spoofing gain estimation to link statistical anomalies to economic incentives (Section~\ref{sec:methodology:spoofing}), two attribution methods for model interpretability (Section~\ref{sec:methodology:interpretability}), and post-hoc analysis to cluster anomalies into typologies and examine their microstructural signatures (Section~\ref{sec:methodology:posthoc}).
+Chapter~\ref{chap:data} describes the dataset and experimental protocol used to instantiate this pipeline.
 
 
 % ==============================================================================
@@ -1347,7 +1518,7 @@ This enables a uniform evaluation framework across all three models, where the t
 \section{Preprocessing Pipeline}\label{sec:data:preprocessing}
 % [CONTENT] Column alignment fix (raw CSV artefacts), numeric coercion,
 % chronological sorting, market hours filtering. Feature engineering
-% (Section~\ref{sec:method:features}) applied per day. Warmup trim (3000
+% (Section~\ref{sec:methodology:features}) applied per day. Warmup trim (3000
 % rows). Quantile clipping and zero-variance column removal. Output: one
 % Parquet file per trading day containing xltime, raw LOB columns, and
 % engineered features.

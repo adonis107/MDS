@@ -680,10 +680,11 @@ Computing OFI at five separate levels allows the models to distinguish pressure 
 
 Before the feature matrix enters any model, four cleaning steps are applied in sequence.
 The value $W_{\text{warmup}} = 3{,}000$ was chosen empirically to ensure that all rolling windows (up to $W = 100$) and EWMA features (with half-life up to $h_\ell = 50$) are fully populated before the output is consumed by any model; a sensitivity analysis is reported in Chapter~\ref{chap:results}.
-First, the initial $W_{\text{warmup}} = 3{,}000$ rows of each trading day are discarded to allow all EWMA and rolling-window features to stabilise.
-Second, infinite values (arising from division by zero in rare edge cases) are replaced by zero.
+First, infinite values (arising from division by zero in rare edge cases) and \texttt{NaN}s are replaced by zero.
+Second, the initial $W_{\text{warmup}} = 3{,}000$ rows of each trading day are discarded to allow all EWMA and rolling-window features to stabilise.
 Third, each feature column is clipped at its $0.1\%$ and $99.9\%$ quantiles to remove extreme outliers while preserving the tail structure needed for anomaly detection.
 Fourth, any column with standard deviation below $10^{-9}$ is dropped as uninformative.
+% ALIGNED: verified against scripts/preprocess.py engineer_features()
 
 Three scaling methods are available, selected per experiment.
 \emph{MinMax} scaling maps each feature to $[0, 1]$.
@@ -728,12 +729,12 @@ Volatility \& Risk & \texttt{volatility\_50}, \texttt{dt}, \texttt{log\_dt} & 6 
 \addlinespace
 Event Flow / Rapidity & \texttt{size\_trade\_*}, \texttt{rapidity\_cancel\_*} & 18 & Poutré et~al.\ trade/cancel sizes, SMA-10, rapidity (count$/\Delta t$), price speed \\
 \addlinespace
-Hawkes Memory & \texttt{Hawkes\_L\_bid\_beta*\_Eta*}, \texttt{Deep\_order\_insertion\_*} & 32 & Short/long EWMA of limit/market flow ($\beta \times \eta$ grid, Fabre \& Challet), deep insertions \\
+Hawkes Memory & \texttt{Hawkes\_L\_bid\_beta*\_Eta*}, \texttt{Deep\_order\_insertion\_*} & 38 & Short/long EWMA of limit/market flow ($\beta \times \eta$ grid + fixed half-lives, Fabre \& Challet), deep insertions \\ % ALIGNED: verified against detection/features/hawkes.py (24 weighted + 6 market temporal + 6 short/long + 2 deep = 38)
 \addlinespace
 Order Flow Imbalance & \texttt{order\_flow\_imbalance\_level\_*} & 5 & Price-conditioned signed flow at levels 1--5 (Eq.~\eqref{eq:ofi}) \\
 \addlinespace
 \midrule
-& & \textbf{83--85} & Total depends on deduplication of shared columns (\texttt{dt}, \texttt{log\_dt}) \\
+& & \textbf{89} & Total verified against processed feature files \\ % ALIGNED: verified against results/2015/transformer_ocsvm_features.txt
 \bottomrule
 \end{tabular}
 \end{table}
@@ -801,7 +802,22 @@ The decision function for a test point $\mathbf{z}$ is:
   f(\mathbf{z}) = \mathbf{w}^\top \Phi(\mathbf{z}) - \rho.
 \end{equation}
 Positive values indicate inliers; negative values indicate outliers.
-The anomaly score used downstream is $-f(\mathbf{z})$, so that higher scores correspond to greater anomalousness.
+Following the terminology of Poutr\'e et~al.~\cite{poutre_2024} (Section~3.5), the \emph{dissimilarity score} is defined as the negation of the decision function:
+\begin{equation}
+  \label{eq:dissimilarity}
+  d(\mathbf{z}) = -f(\mathbf{z}) = \rho - \mathbf{w}^\top \Phi(\mathbf{z}).
+\end{equation}
+Higher values indicate greater departure from the support of normal data, making $d(\mathbf{z})$ the anomaly score used throughout the pipeline.
+An event is classified as anomalous when $d(\mathbf{z}) \geq \tau$, where $\tau$ is a threshold determined by one of the methods in Section~\ref{sec:methodology:thresholds}.
+
+\paragraph{Baseline threshold.}
+Because the EVT-based threshold methods (POT, SPOT, DSPOT) and the rolling FDR each require a calibration period, a simple \emph{baseline threshold} is also defined for initial or comparative use:
+\begin{equation}
+  \label{eq:baseline_tau}
+  \tau_0 = Q_{1 - \epsilon}\!\bigl(\{d(\mathbf{z}_i)\}_{i \in \mathcal{D}_{\text{train}}}\bigr),
+\end{equation}
+where $Q_p$ denotes the $p$-quantile and $\epsilon = 0.01$ is an assumed contamination rate matching the OC-SVM parameter $\nu$.
+This corresponds to flagging the top $\epsilon$ fraction of training scores, providing a label-free default that does not require an explicit threshold sweep.
 
 The OC-SVM is applied to the bottleneck rather than to the raw features or to the reconstruction error for two reasons.
 First, the bottleneck compresses the $k \cdot d_{\text{in}} = 25 \times 80 = 2{,}000$ raw input dimensions down to $d_{\text{rep}} = 128$, producing a semantically compressed space where the OC-SVM can learn a tighter decision boundary.
@@ -1095,7 +1111,7 @@ More generally, the negative log-likelihood of the realised price move under the
 Thresholding is implicit in the model design: the economic framework supplies it.
 
 The Transformer autoencoder of Poutr\'e et~al.~\cite{poutre_2024} pairs its reconstruction with a One-Class SVM trained on the bottleneck representations.
-The OC-SVM produces a continuous dissimilarity score for each input subsequence, defined as a modification of the OC-SVM decision function that measures how far the learned representation lies from the support of normal data.
+The OC-SVM produces a continuous dissimilarity score $d(\mathbf{z}) = -f(\mathbf{z})$ (Eq.~\ref{eq:dissimilarity}) for each input subsequence, measuring how far the learned representation lies from the support of normal data.
 A threshold~$\tau$ is then applied to this score to produce a binary detection decision.
 Crucially, $\tau$ is not learned during training and is not a direct output of the OC-SVM's own decision boundary (which is controlled by~$\nu$).
 Instead, $\tau$ is selected post-hoc by sweeping over candidate values and choosing the one that maximises the $F_4$-score on a labelled evaluation set containing synthetically injected manipulations.
@@ -1758,7 +1774,7 @@ The steps are applied independently per day; no information leaks across days du
 \end{enumerate}
 
 \paragraph{Feature scaling.}
-Before model input, features are further transformed by an empirical Box-Cox scaler (\texttt{EmpiricalBoxCoxScaler}), which applies three operations per feature: (i)~a positive shift ($x \leftarrow x + |\min(x)| + 1$) to ensure strict positivity, (ii)~a Box-Cox power transform with MLE-estimated $\lambda$, and (iii)~z-score standardisation.
+Before model input, features are further transformed by an empirical Box-Cox scaler (\texttt{EmpiricalBoxCoxScaler}), which applies three operations per feature: (i)~a positive shift ($x \leftarrow x + |\min(x)| + \epsilon$, with $\epsilon = 10^{-6}$) to ensure strict positivity % ALIGNED: verified against detection/data/scalers.py, (ii)~a Box-Cox power transform with MLE-estimated $\lambda$, and (iii)~z-score standardisation.
 The scaler is fitted on the training split of the first day only and then applied (transform-only) to all subsequent days, preventing any forward-looking bias.
 
 % ------------------------------------------------------------------
@@ -1893,7 +1909,7 @@ Four intraday periods are defined for stratified analysis: first hour (09:00--10
 \paragraph{Anomaly classification.}
 Each pipeline applies its dedicated threshold mechanism:
 \begin{itemize}
-  \item \textbf{Transformer + OC-SVM}: an event is flagged as anomalous if the OC-SVM decision function is positive (i.e.\ the sample lies outside the learned support).
+  \item \textbf{Transformer + OC-SVM}: an event is flagged as anomalous if the dissimilarity score $d(\mathbf{z}) = -f(\mathbf{z})$ (Eq.~\ref{eq:dissimilarity}) exceeds the baseline threshold $\tau_0$ (Eq.~\ref{eq:baseline_tau}), computed as the $(1 - \epsilon)$-quantile of training dissimilarity scores with $\epsilon = 0.01$. When a calibrated EVT threshold is available, it replaces $\tau_0$. % ALIGNED: verified against scripts/test.py
   \item \textbf{PNN}: the spoofing gain $\Delta\mathcal{C}$ is computed from the predicted skew-normal parameters $(\mu, \sigma, \alpha)$ and the observed spread, using $Q = 4{,}500$ (large order), $q = 100$ (small order), bid displacement $\delta_a = 0$, ask displacement $\delta_b = 0.01$, maker fee $0$, and taker fee $0.0008$ (Euronext Paris large-cap schedule). An event is flagged if $\Delta\mathcal{C} > 0$.
   \item \textbf{PRAE}: the Rolling False Discovery Rate method (Section~\ref{sec:methodology:thresholds:rfdr}) is applied to the reconstruction error, with window size $w = 500$ and significance level $\alpha = 0.05$.
 \end{itemize}

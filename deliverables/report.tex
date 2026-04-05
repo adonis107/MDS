@@ -1664,51 +1664,286 @@ Chapter~\ref{chap:data} describes the dataset and experimental protocol used to 
 % ==============================================================================
 \chapter{Data and Experimental Setup}\label{chap:data}
 
+This chapter describes the dataset, the preprocessing pipeline that transforms raw limit order book (LOB) snapshots into model-ready features, the training and evaluation protocols, and all hyperparameter settings.
+Every numerical value reported below can be traced to the configuration file \texttt{config/default.yaml}, the preprocessing script \texttt{scripts/preprocess.py}, the training script \texttt{scripts/train.py}, or the test script \texttt{scripts/test.py}.
+
+% ------------------------------------------------------------------
 \section{Dataset Description}\label{sec:data:dataset}
-% [CONTENT] Describe the TOTF.PA (TotalEnergies, Euronext Paris) LOB dataset.
-% 10-level snapshots (bid and ask prices and volumes at levels 1--10) with
-% timestamps in Excel serial-date format. Three calendar periods: 2009
-% ($\sim$260 trading days), 2010 ($\sim$260 days), 2015 (25 days, January--
-% February), 2017 ($\sim$70 days, January--April). Continuous trading session:
-% 09:00--17:30 CET. State the approximate number of events per day.
+% ------------------------------------------------------------------
 
+\subsection{Data Source and Instrument}\label{sec:data:source}
+
+The dataset consists of full limit order book snapshots for TotalEnergies SE (Reuters ticker \texttt{TOTF.PA}), a large-cap equity listed on Euronext Paris.
+Each snapshot records ten levels of depth on both the bid and ask sides: prices and volumes at levels~1 through~10, yielding $4 \times 10 = 40$ LOB columns per row.
+A single timestamp column (\texttt{xltime}) encodes the observation time as an Excel serial-date fraction, where the fractional part represents the time of day in UTC.
+The data is event-driven: a new row is generated whenever the LOB state changes, rather than at fixed time intervals.
+
+\subsection{Data Format and Raw Structure}\label{sec:data:format}
+
+Raw files are delivered as compressed CSV or Parquet files, one per trading day.
+Each file nominally contains 41~columns (\texttt{xltime} plus the 40~LOB fields), although a subset of raw CSV files exhibits a column misalignment artefact: a spurious second column (\texttt{Unnamed:~1}) is inserted after \texttt{xltime}, shifting all LOB column headers one position to the right and padding the file to 42~columns.
+This artefact is corrected during preprocessing (Section~\ref{sec:data:preprocessing}).
+
+The naming convention for LOB columns is \texttt{\{side\}-\{type\}-\{level\}}, for example \texttt{bid-price-3} or \texttt{ask-volume-7}.
+
+\subsection{Dataset Statistics}\label{sec:data:stats}
+
+The processed dataset spans four calendar periods of varying length, summarised in Table~\ref{tab:dataset}.
+
+\begin{table}[H]
+\centering
+\caption{Dataset overview by calendar period.}\label{tab:dataset}
+\begin{tabular}{lllr}
+\toprule
+\textbf{Period} & \textbf{Date range} & \textbf{Role} & \textbf{Trading days} \\
+\midrule
+2009 & 2009-01-01 to 2009-12-31 & Out-of-sample test & 261 \\
+2010 & 2010-01-01 to 2010-12-31 & Out-of-sample test & 261 \\
+2015 & 2015-01-02 to 2015-02-05 & Training + in-sample test & 25 \\
+2017 & 2017-01-02 to 2017-04-12 & Training + in-sample test & 73 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Euronext Paris operates a continuous trading session from 09:00 to 17:30 CET.
+The number of LOB updates per day varies with market activity; typical days contain on the order of tens of thousands of events after market-hours filtering.
+In total, the processed corpus comprises 620~daily files.
+
+% ------------------------------------------------------------------
 \section{Preprocessing Pipeline}\label{sec:data:preprocessing}
-% [CONTENT] Column alignment fix (raw CSV artefacts), numeric coercion,
-% chronological sorting, market hours filtering. Feature engineering
-% (Section~\ref{sec:methodology:features}) applied per day. Warmup trim (3000
-% rows). Quantile clipping and zero-variance column removal. Output: one
-% Parquet file per trading day containing xltime, raw LOB columns, and
-% engineered features.
+% ------------------------------------------------------------------
 
+Each raw daily file passes through the following pipeline, implemented in \texttt{scripts/preprocess.py}.
+The steps are applied independently per day; no information leaks across days during preprocessing.
+
+\begin{enumerate}
+\item \textbf{Column alignment.}
+  Files with 42~columns have the spurious column dropped and the remaining 41~columns renamed to \texttt{xltime} plus the 40~canonical LOB names.
+  Files with 41~columns but incorrect headers (e.g.\ data values used as column names in some Parquet exports) are likewise renamed.
+  Files already bearing correct headers are left unchanged.
+
+\item \textbf{Numeric coercion and sorting.}
+  All LOB columns and \texttt{xltime} are cast to numeric types (non-numeric entries become \texttt{NaN}).
+  Rows are sorted chronologically by \texttt{xltime}.
+
+\item \textbf{Market hours filtering.}
+  Rows outside the interval 09:00--24:00 CET are discarded.
+  The upper bound is deliberately set beyond the 17:30 session close to retain after-hours updates for out-of-sample testing; during training, only the first hour (09:00--10:00) is used (Section~\ref{sec:data:training}).
+
+\item \textbf{Feature engineering.}
+  The seven feature groups described in Section~\ref{sec:methodology:features} are computed on each day's LOB data.
+  Rolling and exponentially weighted computations use a window of $w = 50$ events (configurable via \texttt{features.window}).
+  The complete feature vector comprises 89~engineered features per event, organised as follows:
+  \begin{itemize}
+    \item Imbalance (2): L1 and L5 order book imbalance.
+    \item Dynamics (13): mid-price, spread, micro-price deviation, depth ratios, log return, volume deltas, velocity, acceleration, volatility, and net order flows.
+    \item Elasticity (4): bid and ask sweep-to-fill costs and slopes.
+    \item Volatility (5): rolling standard deviation of returns at horizons 50 and 100, price range, absolute velocity, inter-event time $\Delta t$ and $\log \Delta t$.
+    \item Weighted imbalance (3): Tao-style multilevel imbalance with decreasing, increasing, and constant weight schemes across the first five levels.
+    \item Event flow (18): Poutr\'e-style rapidity features, including cancel and trade sizes, their moving averages (window\,$=$\,10), cancel and trade rapidities, and price speeds.
+    \item Hawkes memory and OFI (44): Fabre-Challet limit and market order flows with EWMA at short (halflife\,$=$\,5) and long (halflife\,$=$\,50) horizons, deep-order insertions at level~5, weighted flows with spatial decay ($\eta \in \{0.001, 0.1, 1, 10\}$) and temporal decay ($\beta \in \{10, 100, 1000\}$), and five-level order flow imbalance.
+  \end{itemize}
+
+\item \textbf{Warmup trim.}
+  The first $n_{\text{warmup}} = 3{,}000$ rows of each day are discarded to eliminate transient effects from rolling and EWMA initialisations.
+
+\item \textbf{Quantile clipping.}
+  Each feature column is clipped to its $[0.1\%, 99.9\%]$ quantile range, computed on the post-warmup data of the current day.
+
+\item \textbf{Zero-variance removal.}
+  Columns with standard deviation below $10^{-9}$ are dropped.
+
+\item \textbf{Output.}
+  The result is saved as a single Parquet file per day, containing \texttt{xltime}, the 40~raw LOB columns, and the surviving engineered features (89~in practice).
+\end{enumerate}
+
+\paragraph{Feature scaling.}
+Before model input, features are further transformed by an empirical Box-Cox scaler (\texttt{EmpiricalBoxCoxScaler}), which applies three operations per feature: (i)~a positive shift ($x \leftarrow x + |\min(x)| + 1$) to ensure strict positivity, (ii)~a Box-Cox power transform with MLE-estimated $\lambda$, and (iii)~z-score standardisation.
+The scaler is fitted on the training split of the first day only and then applied (transform-only) to all subsequent days, preventing any forward-looking bias.
+
+% ------------------------------------------------------------------
 \section{Training Protocol}\label{sec:data:training}
-% [CONTENT] Sequential day-by-day training: for each of the first $N-12$
-% days, use the first hour of market data (09:00--10:00). Split the first
-% hour into alternating 5-minute blocks (train/val/train/val...).
-% Models carry over weights from the previous day (continual learning).
-% Scaler fitted on the first day only and reused for all subsequent days.
-% Two independent training runs: one on 2015 data, one on 2017 data.
+% ------------------------------------------------------------------
 
+Training follows a sequential, day-by-day regime designed to respect the temporal ordering of financial data.
+Two fully independent training runs are performed: one on the 2015 period and one on the 2017 period.
+
+\paragraph{Day selection and train/test split.}
+For a period containing $N$ daily files, the first $N - 12$ files form the training set.
+The remaining 12~files are held out entirely and subdivided into two evaluation groups:
+\begin{itemize}
+  \item The \emph{proximate test set} $\mathcal{T}_A$ (files $N{-}11$ through $N{-}4$, nine files): temporally adjacent to the training data, these files may share microstructural characteristics with it (same market regime, similar volatility levels, similar instrument behaviour).
+  \item The \emph{distal test set} $\mathcal{T}_B$ (files $N{-}3$ through $N$, three files): further from the training boundary and less likely to share these characteristics.
+\end{itemize}
+No file appears in more than one partition.
+Table~\ref{tab:split} summarises the resulting counts for each training period.
+
+\begin{table}[H]
+\centering
+\caption{Train/test split by calendar period.}\label{tab:split}
+\begin{tabular}{lrrrrr}
+\toprule
+\textbf{Period} & $N$ & \textbf{Training} & $|\mathcal{T}_A|$ & $|\mathcal{T}_B|$ & \textbf{Total test} \\
+\midrule
+2015 & 25 & 13 & 9 & 3 & 12 \\
+2017 & 73 & 61 & 9 & 3 & 12 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Temporal split rationale.}
+A temporal (chronological) split is used rather than a random split because financial time series exhibit autocorrelation and non-stationarity.
+A random split would allow information from the test period to influence the training distribution via overlapping market regimes, violating the assumption that the model is evaluated on genuinely unseen data.
+A temporal split ensures every test observation follows the training period in calendar time.
+
+\paragraph{Proximity analysis.}
+Comparing model performance across $\mathcal{T}_A$ and $\mathcal{T}_B$ tests whether the model generalises beyond the training regime or merely interpolates within it.
+If performance is stable across both groups, the temporal proximity concern is empirically unfounded.
+If performance degrades on $\mathcal{T}_B$, this indicates regime sensitivity and must be noted as a limitation.
+The original protocol treated the nine proximate files as a passive buffer and discarded them; the updated protocol retains them as $\mathcal{T}_A$ and reports their results separately, interpreted with appropriate caution rather than silently excluded.
+Results on $\mathcal{T}_A$ and $\mathcal{T}_B$ are reported separately in Section~\ref{sec:results:proximity} and discussed in Section~\ref{sec:discussion:generalization}.
+
+\paragraph{Per-day procedure.}
+On each training day:
+\begin{enumerate}
+  \item Load the processed Parquet file (Section~\ref{sec:data:preprocessing}).
+  \item Extract the first hour of continuous trading data (09:00--10:00 CET).
+  \item Split the first hour into alternating 5-minute blocks: train, validation, train, validation, and so on (six blocks of each type).
+  \item Apply the feature scaler. On day~1, the scaler is fitted on the training split; on all subsequent days, the existing scaler is used in transform-only mode.
+  \item Construct sliding-window sequences of length $T = 25$ events for the Transformer-based models (Transformer+OC-SVM and PRAE). The PNN, being a single-step predictor, uses only the last time step of each sequence.
+  \item Train the model with early stopping (patience\,$=$\,20 epochs, maximum 1{,}000 epochs). Model weights carry over from the previous day, implementing a form of continual learning.
+\end{enumerate}
+
+\paragraph{OC-SVM fitting.}
+The Nystr\"om-approximated OC-SVM is fitted once, after all training days are complete.
+The frozen Transformer encoder re-encodes every training day's first-hour data into 128-dimensional latent representations.
+The RBF bandwidth is set via the median heuristic:
+\[
+  \gamma = \frac{1}{\operatorname{median}_{i \neq j} \| \mathbf{z}_i - \mathbf{z}_j \|^2}.
+\]
+The linear separator in the Nystr\"om feature space is then trained by SGD (learning rate $0.01$, 500~epochs).
+
+\paragraph{PRAE regularisation.}
+The gate-strength hyperparameter $\lambda_{\text{reg}}$ is selected on the first training day via a grid search around a heuristic initialisation (from \texttt{calculate\_heuristic\_lambda}).
+Each candidate $\lambda$ is evaluated over 15~training epochs, and the value minimising validation reconstruction error is retained for all subsequent days.
+
+% ------------------------------------------------------------------
 \subsection{Model Hyperparameters}\label{sec:data:hyperparams}
-% [CONTENT] Table summarising all hyperparameters:
-% Transformer: $d_{\text{model}}=64$, heads$=4$, layers$=2$,
-% $d_{\text{rep}}=128$. PNN: hidden$=64$. PRAE: $\sigma=0.5$, $\lambda$
-% tuned via grid search. OC-SVM: $\nu=0.01$, $m=300$ Nystr\"om components,
-% SGD with lr$=0.01$ for 500 epochs. Sequence length$=25$. Batch size$=64$.
-% Adam optimiser, lr$=10^{-4}$, early stopping patience$=20$.
+% ------------------------------------------------------------------
 
+Table~\ref{tab:hyperparams} lists all hyperparameters.
+Values are sourced from \texttt{config/default.yaml} and the constants defined at the top of \texttt{scripts/train.py}.
+
+\begin{table}[H]
+\centering
+\caption{Model and training hyperparameters.}\label{tab:hyperparams}
+\begin{tabular}{lll}
+\toprule
+\textbf{Parameter} & \textbf{Value} & \textbf{Source} \\
+\midrule
+\multicolumn{3}{l}{\textit{Shared}} \\
+Sequence length $T$ & 25 & \texttt{preprocessing.seq\_length} \\
+Batch size & 64 & \texttt{training.batch\_size} \\
+Optimiser & Adam & \texttt{train.py} \\
+Learning rate & $10^{-4}$ & \texttt{training.learning\_rate} \\
+Max epochs & 1{,}000 & \texttt{training.epochs} \\
+Early stopping patience & 20 & \texttt{training.patience} \\
+\midrule
+\multicolumn{3}{l}{\textit{Transformer + OC-SVM}} \\
+$d_{\text{model}}$ & 128 & \texttt{model.transformer.model\_dim} \\
+Attention heads & 8 & \texttt{model.transformer.num\_heads} \\
+Encoder/decoder layers & 6 & \texttt{model.transformer.num\_layers} \\
+Feed-forward dimension & 512 & \texttt{model.transformer.dim\_feedforward} \\
+Bottleneck $d_{\text{rep}}$ & 128 & \texttt{model.transformer.representation\_dim} \\
+OC-SVM $\nu$ & 0.01 & \texttt{model.ocsvm.nu} \\
+Nystr\"om components $m$ & 300 & \texttt{train.py: NYSTROEM\_COMPONENTS} \\
+OC-SVM SGD learning rate & 0.01 & \texttt{train.py: OCSVM\_SGD\_LR} \\
+OC-SVM SGD epochs & 500 & \texttt{train.py: OCSVM\_SGD\_EPOCHS} \\
+OC-SVM $\gamma$ & Median heuristic & \texttt{train.py} \\
+\midrule
+\multicolumn{3}{l}{\textit{PNN}} \\
+Hidden dimension & 64 & \texttt{model.pnn.hidden\_dim} \\
+Output & $(\mu, \sigma, \alpha)$ & Fixed (3 parameters) \\
+\midrule
+\multicolumn{3}{l}{\textit{PRAE}} \\
+Backbone & Same Transformer arch. & Shared with above \\
+Gate noise $\sigma$ & 0.5 & \texttt{model.prae.sigma} \\
+$\lambda_{\text{reg}}$ & Grid search (day 1) & \texttt{model.prae.lambda\_reg = null} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ------------------------------------------------------------------
 \section{Test Protocol}\label{sec:data:test}
-% [CONTENT] Test files: last 3 days of 2015, last 6 days of 2017, 6 days
-% from 2009, 6 days from 2010 (selected as first/last 3 of available data).
-% Test scoring uses the full trading day (09:00--17:30), not just the first
-% hour. Three threshold/classification methods paired with the models:
-% OC-SVM decision function for Transformer+OC-SVM, spoofing gain $> 0$ for
-% PNN, RFDR ($w=500$, $\alpha=0.05$) for PRAE. Cross-year evaluation:
-% 2015-trained models tested on 2017 and 2009/2010 data, and vice versa.
+% ------------------------------------------------------------------
 
+\paragraph{Test set composition.}
+For each trained model (2015-trained or 2017-trained), test scoring is performed on three groups of files:
+\begin{itemize}
+  \item \textbf{In-sample held-out} ($\mathcal{T}_A \cup \mathcal{T}_B$): the 12~held-out files from the training period, further subdivided into the proximate set $\mathcal{T}_A$ (9~files) and the distal set $\mathcal{T}_B$ (3~files) as described in Section~\ref{sec:data:training}.
+  \item \textbf{Cross-year}: all days from the other within-decade period. For a 2015-trained model, this is the full 2017 corpus (73~days), and conversely.
+  \item \textbf{Out-of-sample}: all days from 2009 (261~days) and 2010 (261~days), which predate both training periods.
+\end{itemize}
+This design enables in-distribution evaluation (with proximity stratification), cross-period transfer evaluation, and out-of-distribution evaluation.
+
+\paragraph{Scoring.}
+Unlike training, which uses only the first hour, test scoring operates on the full continuous trading session (09:00--17:30 CET).
+Four intraday periods are defined for stratified analysis: first hour (09:00--10:00), rest of morning (10:00--12:00), afternoon (12:00--15:30), and American open (15:30--17:30).
+
+\paragraph{Anomaly classification.}
+Each pipeline applies its dedicated threshold mechanism:
+\begin{itemize}
+  \item \textbf{Transformer + OC-SVM}: an event is flagged as anomalous if the OC-SVM decision function is positive (i.e.\ the sample lies outside the learned support).
+  \item \textbf{PNN}: the spoofing gain $\Delta\mathcal{C}$ is computed from the predicted skew-normal parameters $(\mu, \sigma, \alpha)$ and the observed spread, using $Q = 4{,}500$ (large order), $q = 100$ (small order), bid displacement $\delta_a = 0$, ask displacement $\delta_b = 0.01$, maker fee $0$, and taker fee $0.0008$ (Euronext Paris large-cap schedule). An event is flagged if $\Delta\mathcal{C} > 0$.
+  \item \textbf{PRAE}: the Rolling False Discovery Rate method (Section~\ref{sec:methodology:thresholds:rfdr}) is applied to the reconstruction error, with window size $w = 500$ and significance level $\alpha = 0.05$.
+\end{itemize}
+
+\paragraph{Evaluation metric.}
+Since no ground-truth manipulation labels are available, model comparison relies on internal consistency metrics (anomaly rates, cross-model agreement, score distributions) rather than supervised accuracy.
+Where a reference labelling is available for benchmarking, the $F_\beta$ score with $\beta = 4$ is used, weighting recall four times higher than precision, as missing a true manipulation event is considered more costly than a false alarm.
+
+% ------------------------------------------------------------------
 \section{Compute Environment}\label{sec:data:compute}
-% [CONTENT] Training on the Ruche HPC cluster (Universit\'e Paris-Saclay):
-% GPU nodes. PyTorch with CUDA 12.1. State approximate training time per
-% model. Local analysis on CPU for notebooks.
+% ------------------------------------------------------------------
+
+Model training is executed on the Ruche HPC cluster (Universit\'e Paris-Saclay / CentraleSup\'elec mesocentre), using a single NVIDIA A100-40\,GB GPU node with 8~CPU cores and 40\,GB of host RAM.
+The software environment consists of Python~3.10, PyTorch with CUDA~12.1, and standard scientific libraries (NumPy, pandas, scikit-learn, SciPy).
+Post-training analysis (notebooks, visualisation, sensitivity analysis) is performed locally on CPU.
+
+% ------------------------------------------------------------------
+% REVISION LOG — Chapter 4
+% ------------------------------------------------------------------
+% Resolved placeholders:
+%   [CONTENT] sec:data:dataset   → Written: instrument, LOB format, 4 periods, day counts.
+%   [CONTENT] sec:data:preprocessing → Written: 8-step pipeline with feature inventory.
+%   [CONTENT] sec:data:training  → Written: day-by-day protocol, scaler fitting, OC-SVM, PRAE lambda.
+%   [CONTENT] sec:data:hyperparams → Written: full table with 19 hyperparameters and sources.
+%   [CONTENT] sec:data:test      → Written: test set composition, scoring, classification, F-beta.
+%   [CONTENT] sec:data:compute   → Written: Ruche cluster, A100, PyTorch+CUDA 12.1.
+%
+% Corrections vs. original placeholder comments:
+%   - Transformer hyperparams corrected from d_model=64/heads=4/layers=2
+%     to d_model=128/heads=8/layers=6 (verified in config/default.yaml
+%     and train.py: TRANSFORMER_CFG).
+%   - Test protocol corrected: code tests on ALL of 2009/2010/2017
+%     (not "6 days from 2009, 6 from 2010"); verified in test.py.
+%   - NUM_TRAIN_DAYS = N-12: 12 files held out total.
+%
+% Rev 2 — Train/test split update:
+%   - Replaced passive 9-file buffer with active proximate test set T_A.
+%   - Day selection paragraph now documents T_A (9 files) and T_B (3 files).
+%   - Table~\ref{tab:split} added with per-year split counts.
+%   - Test set composition updated: in-sample now references T_A ∪ T_B.
+%   - Forward references added: sec:results:proximity, sec:discussion:generalization.
+%   - Code updated: train.py, test.py, config/default.yaml.
+%
+% Values that could not be verified from code alone:
+%   - Approximate number of events per day (depends on raw data; stated
+%     as "tens of thousands" — exact figures require loading raw files).
+%   - Training wall-clock time per model (not logged in code; omitted).
+%
+% Feature count verification:
+%   results/2015/transformer_ocsvm_features.txt: 89 features (confirmed).
 
 
 % ==============================================================================
@@ -1798,6 +2033,14 @@ Chapter~\ref{chap:data} describes the dataset and experimental protocol used to 
 % Score distribution histograms with threshold positions overlaid.
 % Discuss sensitivity to threshold choice and recommend a default.
 
+\section{Proximity Analysis}\label{sec:results:proximity}
+% [CONTENT] Compare metrics on $\mathcal{T}_A$ (proximate) vs.
+% $\mathcal{T}_B$ (distal) for each model.  Table: one row per metric
+% (anomaly rate, mean score), three columns (proximate / distal / combined).
+% Report Welch t-test p-values.  Discuss whether temporal proximity to the
+% training set materially affects detection performance.
+% NOTE: small sample sizes (9 vs 3 days) limit statistical power.
+
 \section{Spoofing Gain Analysis}\label{sec:results:spoofing}
 % [CONTENT] Distribution of PNN-predicted spoofing gain $\Delta\mathcal{C}$
 % across test data. Fraction of events with positive gain (profitable
@@ -1851,6 +2094,15 @@ Chapter~\ref{chap:data} describes the dataset and experimental protocol used to 
 \chapter{Discussion}\label{chap:discussion}
 
 \section{Limitations}\label{sec:discussion:limitations}
+
+\section{Generalization and Regime Sensitivity}\label{sec:discussion:generalization}
+% [CONTENT] Discuss whether model performance varies between $\mathcal{T}_A$
+% (proximate) and $\mathcal{T}_B$ (distal).  Interpret the Welch t-test
+% results from Section~\ref{sec:results:proximity}.  If performance is
+% stable, argue that the temporal buffer was unnecessary.  If it degrades,
+% quantify the effect and discuss implications for deployment.
+
+% (Original limitations content moved below)
 % [CONTENT] (1) No ground truth: all anomaly rates are relative, not
 % absolute. (2) Single asset (TOTF.PA): results may not generalise to less
 % liquid stocks, other exchanges, or different asset classes. (3) Training

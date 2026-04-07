@@ -1,0 +1,10 @@
+hawkes
+ipykernel
+jupyter
+matplotlib
+numpy
+pandas
+powerlaw
+scipy
+statsmodels
+tqdm

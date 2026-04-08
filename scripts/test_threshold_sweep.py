@@ -323,6 +323,13 @@ def main() -> None:
             logger.warning("Skipping %s (too few samples: %d)", stream_name, len(scores))
             continue
 
+        # Save stream-level arrays once (shared across all methods)
+        stream_dir = os.path.join(threshold_root, stream_name)
+        os.makedirs(stream_dir, exist_ok=True)
+        np.save(os.path.join(stream_dir, "scores.npy"), scores.astype(np.float32))
+        np.save(os.path.join(stream_dir, "period_labels.npy"), period_labels)
+        np.save(os.path.join(stream_dir, "day_boundaries.npy"), np.asarray(day_boundaries, dtype=np.int32))
+
         for method in args.methods:
             logger.info("Running %s on %s", method, stream_name)
 
@@ -335,14 +342,11 @@ def main() -> None:
             else:
                 raise ValueError(f"Unsupported method: {method}")
 
-            out_dir = os.path.join(threshold_root, stream_name, method)
+            out_dir = os.path.join(stream_dir, method)
             os.makedirs(out_dir, exist_ok=True)
 
-            np.save(os.path.join(out_dir, "scores.npy"), scores.astype(np.float32))
             np.save(os.path.join(out_dir, "preds.npy"), preds.astype(np.int32))
             np.save(os.path.join(out_dir, "thresholds.npy"), thresholds.astype(np.float32))
-            np.save(os.path.join(out_dir, "period_labels.npy"), period_labels)
-            np.save(os.path.join(out_dir, "day_boundaries.npy"), np.asarray(day_boundaries, dtype=np.int32))
 
             by_period = _summarize_by_period(preds, period_labels)
             by_day = _summarize_by_day(preds, day_boundaries, day_names)

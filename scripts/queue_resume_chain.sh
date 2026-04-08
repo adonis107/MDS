@@ -10,7 +10,7 @@
 set -euo pipefail
 
 N_RUNS="${1:-4}"
-JOB_SCRIPT="${2:-scripts/submit_training.sh}"
+JOB_SCRIPT="${2:-scripts/slurm/train.sh}"
 
 if [ ! -f "$JOB_SCRIPT" ]; then
     echo "Job script not found: $JOB_SCRIPT"

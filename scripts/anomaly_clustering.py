@@ -88,7 +88,7 @@ def parse_args():
     p.add_argument("--spoof-delta-a", type=float, default=0.0)
     p.add_argument("--spoof-delta-b", type=float, default=0.01)
     p.add_argument("--spoof-maker-fee", type=float, default=0.0)
-    p.add_argument("--spoof-taker-fee", type=float, default=0.05)
+    p.add_argument("--spoof-taker-fee", type=float, default=0.0008)  # ALIGNED: Euronext Paris fee (report §3.4)
     # RFDR
     p.add_argument("--rfdr-window", type=int, default=500)
     p.add_argument("--rfdr-alpha", type=float, default=0.05)
@@ -202,6 +202,9 @@ def compute_file_scores(features_day, spread_raw, feature_names_map, loaded_mode
                             torch.mean((x - rec) ** 2, dim=(1, 2)).cpu().numpy()
                         )
                 scores = np.concatenate(scores_list)
+            # Use native OC-SVM decision boundary (dissimilarity >= 0) for broad
+            # anomaly coverage in clustering. test.py uses a stricter calibrated
+            # baseline tau computed from training data.
             preds = (scores > 0).astype(int)
 
         elif model_type == "pnn":
@@ -210,8 +213,9 @@ def compute_file_scores(features_day, spread_raw, feature_names_map, loaded_mode
                 for start in range(0, len(sequences), args.batch_size):
                     end = min(start + args.batch_size, len(sequences))
                     x_b = torch.tensor(
-                        np.ascontiguousarray(sequences[start:end]), dtype=torch.float32
-                    ).reshape(end - start, -1).to(DEVICE)
+                        np.ascontiguousarray(sequences[start:end, -1, :]),
+                        dtype=torch.float32,
+                    ).to(DEVICE)
                     mu, sigma, alpha = model(x_b)
                     all_mu.append(mu.cpu().numpy().flatten())
                     all_sigma.append(sigma.cpu().numpy().flatten())

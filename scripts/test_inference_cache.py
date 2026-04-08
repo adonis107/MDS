@@ -98,7 +98,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--spoof-delta-a", type=float, default=0.0)
     parser.add_argument("--spoof-delta-b", type=float, default=0.01)
     parser.add_argument("--spoof-maker-fee", type=float, default=0.0)
-    parser.add_argument("--spoof-taker-fee", type=float, default=0.05)
+    parser.add_argument("--spoof-taker-fee", type=float, default=0.0008)
 
     return parser.parse_args()
 
@@ -200,7 +200,7 @@ def compute_transformer_stage(
     recon_arr = np.concatenate(recon_err, axis=0) if recon_err else np.empty((0,), dtype=np.float32)
 
     if detector_or_none is not None and len(latent_arr) > 0:
-        ocsvm_score = -detector_or_none.decision_function(latent_arr)
+        ocsvm_score = detector_or_none.dissimilarity_score(latent_arr)
     else:
         ocsvm_score = recon_arr.copy()
 
@@ -225,9 +225,9 @@ def compute_pnn_stage(
         for start in range(0, len(sequences), batch_size):
             end = min(start + batch_size, len(sequences))
             x_batch = torch.tensor(
-                np.ascontiguousarray(sequences[start:end]),
+                np.ascontiguousarray(sequences[start:end, -1, :]),
                 dtype=torch.float32,
-            ).reshape(end - start, -1).to(DEVICE)
+            ).to(DEVICE)
             mu, sigma, alpha = model(x_batch)
             all_mu.append(mu.cpu().numpy().flatten())
             all_sigma.append(sigma.cpu().numpy().flatten())

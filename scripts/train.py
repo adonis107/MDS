@@ -3,16 +3,11 @@
 # 
 # We train the models sequentially, across multiple days.
 # 
-# - **Dataset:** TOTF.PA (Euronext Paris), 25 daily LOB snapshots
-# - **Scaler:** Quantile (Box-Cox + z-score)
+# - **Dataset:** TOTF.PA (Euronext Paris)
 # - **Models:**
 #     - Transformer + OC-SVM (hybrid)
 #     - PNN (Probabilistic Neural Network)
 #     - PRAE (Probabilistic Robust Autoencoder)
-# - **Training Strategy:** For each of the first 24 days, use the first hour of market data split into alternating 5-minute blocks of training and validation.
-# - **Test Day:** Day 25 (held out entirely).
-# - **Features:** base, tao (weighted imbalance), poutre (rapidity / event flow), hawkes (memory), ofi (order flow imbalance).
-
 # %%
 import os
 import sys
@@ -55,7 +50,7 @@ logger.info("Device: %s", DEVICE)
 # %%
 # Paths
 DATA_DIR = os.path.join("data", "processed", "TOTF.PA-book")
-TRAIN_YEAR = "2017"  # "2015" or "2017"
+TRAIN_YEAR = os.environ.get("MDS_YEAR", "2017")  # override via env for SLURM parallelism
 RESULTS_DIR = os.path.join("results", TRAIN_YEAR)
 RESUME_DIR = os.path.join(RESULTS_DIR, "resume_state")
 os.makedirs(RESULTS_DIR, exist_ok=True)
@@ -63,12 +58,23 @@ os.makedirs(RESUME_DIR, exist_ok=True)
 
 # File listing
 FILES = sorted(glob.glob(os.path.join(DATA_DIR, f"{TRAIN_YEAR}*.parquet")))
-NUM_TRAIN_DAYS = len(FILES) - 12  # Last 3 days are held out for testing
-logger.info("Found %d daily files.  Training on %d days, testing on day %d.", len(FILES), NUM_TRAIN_DAYS, len(FILES))
+NUM_HOLDOUT = 12
+NUM_TRAIN_DAYS = len(FILES) - NUM_HOLDOUT
+# Held-out files split into two evaluation groups:
+#   test_proximate (T_A): files [NUM_TRAIN_DAYS .. NUM_TRAIN_DAYS+9)  — 9 days adjacent to training
+#   test_distal    (T_B): files [NUM_TRAIN_DAYS+9 .. N)               — last 3 days
+TRAIN_FILES = FILES[:NUM_TRAIN_DAYS]
+TEST_PROXIMATE_FILES = FILES[NUM_TRAIN_DAYS:NUM_TRAIN_DAYS + 9]
+TEST_DISTAL_FILES = FILES[NUM_TRAIN_DAYS + 9:]
+logger.info(
+    "Found %d daily files.  Training: %d | Test proximate (T_A): %d | Test distal (T_B): %d.",
+    len(FILES), NUM_TRAIN_DAYS, len(TEST_PROXIMATE_FILES), len(TEST_DISTAL_FILES),
+)
 
 # %% [markdown]
 # ## Model Types
-MODEL_TYPES = ["transformer_ocsvm", "pnn", "prae"]
+_ALL_MODELS = ["transformer_ocsvm", "pnn", "prae"]
+MODEL_TYPES = os.environ.get("MDS_MODELS", "").split(",") if os.environ.get("MDS_MODELS") else _ALL_MODELS
 
 # Data parameters
 TIME_COL = "xltime"
@@ -104,8 +110,6 @@ LOB_COLUMNS = [
     for lvl in range(1, 11)
     for side, typ in [("bid","price"),("bid","volume"),("ask","price"),("ask","volume")]
 ]
-
-
 
 # Storage for trained artefacts
 trained_models = {}   # model_type -> (model, detector_or_None)
@@ -192,7 +196,7 @@ for model_type in MODEL_TYPES:
                 PNN_HIDDEN_DIM, PRAE_SIGMA,
             )
 
-            # ── PRAE: tune lambda_reg via validation reconstruction loss ──
+            # PRAE: tune lambda_reg via validation reconstruction loss
             if model_type == "prae":
                 heuristic_lambda = calculate_heuristic_lambda(
                     train_loader, seq_len=SEQ_LENGTH, num_features=num_features)
@@ -239,7 +243,6 @@ for model_type in MODEL_TYPES:
     # ----------------------------------------------------------------
     # Fit Nyström OC-SVM once after all days, using the final frozen
     # encoder to re-encode every training day's first-hour data.
-    # All latent vectors stay on CUDA -- no numpy round-trip.
     # ----------------------------------------------------------------
     if model_type == "transformer_ocsvm" and detector is not None:
         logger.info("Fitting Nyström OC-SVM on latent representations from all training days...")
@@ -262,7 +265,7 @@ for model_type in MODEL_TYPES:
                 seqs = create_sequences(scaled, SEQ_LENGTH)
                 if len(seqs) == 0:
                     continue
-                # Encode in batches to avoid OOM -- keep on GPU
+                # Encode in batches to avoid OOM - keep on GPU
                 x_tensor = torch.tensor(seqs, dtype=torch.float32)
                 ds = TensorDataset(x_tensor, x_tensor)
                 loader = DataLoader(ds, batch_size=BATCH_SIZE, shuffle=False)

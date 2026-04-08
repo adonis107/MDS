@@ -31,22 +31,26 @@ def compute_hawkes(df:pd.DataFrame, features, etas=None, betas=None,
     flow_L_bid = np.where((~price_change_bid) & (d_volume_bid > 0), d_volume_bid, 0)
     flow_L_ask = np.where((~price_change_ask) & (d_volume_ask > 0), d_volume_ask, 0)
 
-    # Market order proxy (e_t) and separated signs
-    e_t = np.where(df['bid-price-1'] > df['bid-price-1'].shift(1),
-                   df['bid-volume-1'],
-                   np.where(df['bid-price-1'] < df['bid-price-1'].shift(1),
-                            -df['bid-volume-1'].shift(1),
-                            d_volume_bid))
-    flow_M_bid = np.where(e_t > 0, e_t, 0)
-    flow_M_ask = np.where(e_t < 0, np.abs(e_t), 0)
+    # Market order flows on best level (unified convention).
+    # raw_M_bid: sell market orders consuming bid-side liquidity (bid price drops,
+    #   or volume decreases at unchanged bid price).
+    # raw_M_ask: buy market orders consuming ask-side liquidity (ask price rises,
+    #   or volume decreases at unchanged ask price).
+    d_price_bid = df['bid-price-1'].diff().fillna(0)
+    d_price_ask = df['ask-price-1'].diff().fillna(0)
+
+    raw_M_bid = np.where(d_price_bid < 0, df['bid-volume-1'].shift(1),
+                         np.where((d_price_bid == 0) & (d_volume_bid < 0), -d_volume_bid, 0))
+    raw_M_ask = np.where(d_price_ask > 0, df['ask-volume-1'].shift(1),
+                         np.where((d_price_ask == 0) & (d_volume_ask < 0), -d_volume_ask, 0))
 
     ### Hawkes-style memory features ###
     # Short vs long term memory for limit orders
     # Manipulators can create short bursts of activity taht deviate from normal patterns
     features["Hawkes_L_bid_short"] = pd.Series(flow_L_bid, index=df.index).ewm(halflife=halflife_short).mean()
     features["Hawkes_L_ask_short"] = pd.Series(flow_L_ask, index=df.index).ewm(halflife=halflife_short).mean()
-    features["Hawkes_M_bid_short"] = pd.Series(flow_M_bid, index=df.index).ewm(halflife=halflife_short).mean()
-    features["Hawkes_M_ask_short"] = pd.Series(flow_M_ask, index=df.index).ewm(halflife=halflife_short).mean()
+    features["Hawkes_M_bid_short"] = pd.Series(raw_M_bid, index=df.index).ewm(halflife=halflife_short).mean()
+    features["Hawkes_M_ask_short"] = pd.Series(raw_M_ask, index=df.index).ewm(halflife=halflife_short).mean()
 
     features["Hawkes_L_bid_long"] = pd.Series(flow_L_bid, index=df.index).ewm(halflife=halflife_long).mean()
     features["Hawkes_L_ask_long"] = pd.Series(flow_L_ask, index=df.index).ewm(halflife=halflife_long).mean()
@@ -78,8 +82,12 @@ def compute_hawkes(df:pd.DataFrame, features, etas=None, betas=None,
         if vol_col_bid not in df.columns or price_col_bid not in df.columns:
             break
 
-        d_vol_bid = df[vol_col_bid].diff().clip(lower=0).fillna(0)
-        d_vol_ask = df[vol_col_ask].diff().clip(lower=0).fillna(0)
+        # Only count volume increases when the price at this level is unchanged
+        # (pure limit-order insertions, not price-level shifts)  # ALIGNED: report §3.1.5
+        price_unch_bid = df[price_col_bid] == df[price_col_bid].shift(1)
+        price_unch_ask = df[price_col_ask] == df[price_col_ask].shift(1)
+        d_vol_bid = (df[vol_col_bid].diff().clip(lower=0).fillna(0)) * price_unch_bid
+        d_vol_ask = (df[vol_col_ask].diff().clip(lower=0).fillna(0)) * price_unch_ask
         dist_bid = np.abs(df[price_col_bid] - mid_price)
         dist_ask = np.abs(df[price_col_ask] - mid_price)
 
@@ -97,17 +105,7 @@ def compute_hawkes(df:pd.DataFrame, features, etas=None, betas=None,
             features[col_name_bid] = total_weighted_flow_bid[eta].ewm(halflife=beta).mean()
             features[col_name_ask] = total_weighted_flow_ask[eta].ewm(halflife=beta).mean()
 
-    # Market raw flows on best level with time decays
-    d_vol_best_bid = df['bid-volume-1'].diff().fillna(0)
-    d_vol_best_ask = df['ask-volume-1'].diff().fillna(0)
-    d_price_bid = df['bid-price-1'].diff().fillna(0)
-    d_price_ask = df['ask-price-1'].diff().fillna(0)
-
-    raw_M_bid = np.where(d_price_bid < 0, df['bid-volume-1'].shift(1),
-                         np.where((d_price_bid == 0) & (d_vol_best_bid < 0), -d_vol_best_bid, 0))
-    raw_M_ask = np.where(d_price_ask > 0, df['ask-volume-1'].shift(1),
-                         np.where((d_price_ask == 0) & (d_vol_best_ask < 0), -d_vol_best_ask, 0))
-
+    # Market flows with time decay (same raw_M_bid/raw_M_ask defined above)
     for beta in betas:
         features[f"Hawkes_M_bid_beta{beta}"] = pd.Series(raw_M_bid, index=df.index).ewm(halflife=beta).mean()
         features[f"Hawkes_M_ask_beta{beta}"] = pd.Series(raw_M_ask, index=df.index).ewm(halflife=beta).mean()

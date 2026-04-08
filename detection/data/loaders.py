@@ -26,15 +26,21 @@ def scale_and_create_loaders(
 
     val_scaled = scaler.transform(val_feat.values.astype(np.float32)).astype(np.float32)
 
+    # Extract raw (pre-scaling) log return for the PNN target.
+    # The PNN must predict in raw log-return units so that the spoofing gain
+    # computation (which uses raw spread in EUR) is dimensionally consistent.
+    target_idx = feature_names.index(target_col)
+    train_raw_targets = train_feat.values[seq_length:, target_idx].astype(np.float32)
+    val_raw_targets = val_feat.values[seq_length:, target_idx].astype(np.float32)
+
     train_seqs = create_sequences(train_scaled, seq_length)
     val_seqs = create_sequences(val_scaled, seq_length)
 
     if len(train_seqs) == 0 or len(val_seqs) == 0:
         return None, None, scaler, feature_names
 
-    target_idx = feature_names.index(target_col)
-    train_targets = train_scaled[seq_length:, target_idx][:len(train_seqs)]
-    val_targets = val_scaled[seq_length:, target_idx][:len(val_seqs)]
+    train_targets = train_raw_targets[:len(train_seqs)]
+    val_targets = val_raw_targets[:len(val_seqs)]
 
     x_train = torch.tensor(train_seqs, dtype=torch.float32)
     x_val = torch.tensor(val_seqs, dtype=torch.float32)
@@ -42,8 +48,10 @@ def scale_and_create_loaders(
     if model_type == "pnn":
         y_train = torch.tensor(train_targets, dtype=torch.float32).unsqueeze(1)
         y_val = torch.tensor(val_targets, dtype=torch.float32).unsqueeze(1)
-        train_ds = TensorDataset(x_train.reshape(x_train.size(0), -1), y_train)
-        val_ds = TensorDataset(x_val.reshape(x_val.size(0), -1), y_val)
+        # PNN uses only the last time step of each sequence (single-step predictor),
+        # matching the architecture of Fabre and Challet (2025).
+        train_ds = TensorDataset(x_train[:, -1, :], y_train)
+        val_ds = TensorDataset(x_val[:, -1, :], y_val)
     elif model_type == "prae":
         train_ds = IndexDataset(TensorDataset(x_train, x_train))
         val_ds = IndexDataset(TensorDataset(x_val, x_val))

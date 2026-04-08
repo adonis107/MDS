@@ -92,8 +92,7 @@ def train_one_block(model, detector, train_loader, val_loader, model_type,
         os.remove(ckpt_path)
     early_stop = EarlyStopping(patience=patience, verbose=False, path=ckpt_path)
 
-    # PRAE: monitor train loss (which includes the mu-gate objective) because
-    # the val loss is plain reconstruction and does not reflect mu convergence.
+    # All models: monitor val_loss for early stopping.
     monitor = 'val_loss'
     trainer = Trainer(epochs=epochs, learning_rate=lr,
                       callbacks=[early_stop], device=str(device),

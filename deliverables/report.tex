@@ -179,8 +179,8 @@ The main contributions of this report are:
 \begin{enumerate}
     \item A modular detection pipeline that combines three complementary unsupervised models on the same equity LOB dataset (TOTF.PA, Euronext Paris): a Transformer bottleneck autoencoder inspired by Poutr\'e et al.~\cite{poutre_2024}, coupled with a Nystr\"om-approximated One-Class SVM in latent space; a Probabilistic Neural Network (PNN) that predicts skew-normal price move distributions following the framework of Fabre and Challet~\cite{fabre_2025}; and a Probabilistic Robust Autoencoder (PRAE) with learnable per-sample gates~\cite{lindenbaum2022prae}. Each model produces a scalar anomaly score per time step; their agreement identifies the highest-confidence anomalies.
 
-    \item A feature engineering library of approximately 80 features synthesising contributions from multiple sources: Hawkes-inspired memory features with spatial and temporal decay~\cite{fabre_2025}, weighted multi-level volume imbalance~\cite{tao_2020}, event flow and cancellation rapidity~\cite{poutre_2024}, multi-level order flow imbalance, and standard microstructural indicators (spread, volatility, elasticity).
-      This represents an input space roughly six times larger than that of Poutr\'e et~al.~\cite{poutre_2024}, who use approximately 13~Level-1 features.
+    \item A feature engineering library of 89 features synthesising contributions from multiple sources: Hawkes-inspired memory features with spatial and temporal decay~\cite{fabre_2025}, weighted multi-level volume imbalance~\cite{tao_2020}, event flow and cancellation rapidity~\cite{poutre_2024}, multi-level order flow imbalance, and standard microstructural indicators (spread, volatility, elasticity).
+      This represents an input space roughly seven times larger than that of Poutr\'e et~al.~\cite{poutre_2024}, who use approximately 13~Level-1 features.
 
     \item Application of the spoofing gain framework of Fabre and Challet~\cite{fabre_2025} to equity LOB data.  The PNN-predicted skew-normal parameters feed an expected cost model that quantifies the profitability of a hypothetical spoofing strategy at each time step, producing an interpretable economic measure of manipulation opportunity.
 
@@ -297,7 +297,7 @@ The One-Class SVM (OC-SVM) is the most widely used instance: it finds a hyperpla
 
 The strengths of the OC-SVM are computational efficiency and theoretical simplicity.
 It does not require specifying what an anomaly looks like, only what normal data looks like, and the kernel trick allows it to capture non-linear structure in the input space.
-However, it does not scale well to high-dimensional feature spaces without careful kernel design: in the approximately 80-dimensional feature space typical of LOB anomaly detection, the RBF kernel becomes poorly calibrated and the decision boundary may either collapse or become too loose.
+However, it does not scale well to high-dimensional feature spaces without careful kernel design: in the 89-dimensional feature space typical of LOB anomaly detection, the RBF kernel becomes poorly calibrated and the decision boundary may either collapse or become too loose.
 Low-rank kernel approximations (such as the Nystr\"om method) partially address this issue by projecting the kernel evaluation into a tractable subspace, enabling GPU-accelerated training.
 A further limitation is that the OC-SVM does not produce a calibrated probability; its decision function is a signed distance, not a likelihood, which complicates downstream interpretation and threshold calibration.
 
@@ -377,7 +377,7 @@ The trade-off is lower resolution: it identifies which feature families matter, 
 ]
   % Row 1: Data pipeline
   \node[stage] (raw) {Raw LOB\\(41 cols/row)};
-  \node[stage, right=of raw] (feat) {Feature Eng.\\(7 groups, ${\sim}85$ feat.)};
+  \node[stage, right=of raw] (feat) {Feature Eng.\\(7 groups, $89$ feat.)};
   \node[stage, right=of feat] (win) {Windowing\\($k{=}25$)};
 
   % Row 2: Models
@@ -430,7 +430,7 @@ The data is event-driven: a new row is recorded whenever a limit order, cancella
 
 Feeding the 40 raw price-volume columns directly to a model is wasteful and fragile.
 Prices at adjacent levels are highly correlated, volumes are non-stationary, and the absolute price level carries no information about short-term dynamics.
-Engineered features reduce the input dimensionality to $d_{\text{in}} \approx 80$ informative quantities that are more stationary, more interpretable, and encode the domain knowledge needed to distinguish normal from anomalous order flow.
+Engineered features reduce the input dimensionality to $d_{\text{in}} = 89$ informative quantities that are more stationary, more interpretable, and encode the domain knowledge needed to distinguish normal from anomalous order flow.
 
 The features are organised into seven groups: (1)~order book imbalance, capturing supply-demand asymmetry across depth levels; (2)~price dynamics and microstructure, summarising price movements and their relationship to volume; (3)~liquidity and elasticity, measuring the cost and shape of the book; (4)~volatility proxies; (5)~event flow and rapidity, characterising the intensity and type of order arrivals; (6)~Hawkes-inspired memory features, capturing self-exciting patterns in order flow with spatial and temporal decay; and (7)~order flow imbalance, measuring signed directional pressure from volume changes conditioned on price movements.
 Preprocessing and scaling are described in Section~\ref{subsec:features:preprocessing}.
@@ -461,7 +461,7 @@ To weight deeper levels more flexibly, we follow Tao et~al.~\cite{tao_2020} and 
   I^{(\mathbf{w})}_t = \frac{\sum_{i=1}^{5} w_i \, V^b_{i,t}}{\sum_{i=1}^{5} w_i \, V^b_{i,t} + \sum_{i=1}^{5} w_i \, V^a_{i,t}}.
 \end{equation}
 This quantity lies in $[0, 1]$; values above $0.5$ indicate net bid-side weight.
-Three weight configurations are used: \emph{deep-weighted} $\mathbf{w} = (0.1, 0.1, 0.2, 0.2, 0.4)$, which emphasises deeper levels where spoof orders are less likely to be executed; \emph{top-weighted} $\mathbf{w} = (0.4, 0.2, 0.2, 0.1, 0.1)$, which emphasises the best quotes; and \emph{uniform} $\mathbf{w} = (0.2, 0.2, 0.2, 0.2, 0.2)$, which weights all five levels equally.
+Three weight configurations are used: \emph{decreasing-weighted} $\mathbf{w} = (0.1, 0.1, 0.2, 0.2, 0.4)$, which emphasises deeper levels where spoof orders are less likely to be executed; \emph{increasing-weighted} $\mathbf{w} = (0.4, 0.2, 0.2, 0.1, 0.1)$, which emphasises the best quotes; and \emph{constant-weighted} $\mathbf{w} = (0.2, 0.2, 0.2, 0.2, 0.2)$, which weights all five levels equally.
 Unlike the Level-1 volume imbalance used by Poutr\'e et~al.~\cite{poutre_2024}, this weighted formulation aggregates information across five price levels, so $I^{(\mathbf{w})}_t$ reflects the depth structure of the book rather than only the best quotes.
 
 
@@ -563,7 +563,7 @@ Abnormally short inter-event times can signal quote-stuffing activity.
 Following Poutr\'e et~al.~\cite{poutre_2024}, each LOB update is classified as either a cancellation or a trade based on observable price and volume changes.
 A cancellation on side $s$ is identified when the best price is unchanged and volume decreases ($p^s_{1,t} = p^s_{1,t-1}$ and $\Delta V^s_{1,t} < 0$).
 A trade on side $s$ is labelled by the \emph{aggressor} (the marketable order that initiates the transaction): a buy trade is detected when the ask price changes ($p^a_{1,t} \neq p^a_{1,t-1}$), and a sell trade when the bid price changes ($p^b_{1,t} \neq p^b_{1,t-1}$).
-The corresponding event-size features are indexed by the \emph{passive} side of the book that absorbed the order ($s = b$ for a buy trade, $s = a$ for a sell trade).
+The corresponding event-size features are indexed by the \emph{aggressor} side of the trade ($s = b$ for a buy trade initiated by a buyer, $s = a$ for a sell trade initiated by a seller).  The feature $\text{Size}_t^{\text{trade},b} = V^b_{1,t-1} \cdot \mathbf{1}[\text{buy trade}_t]$ records the bid-side L1 depth immediately before a buy-initiated trade.
 
 The event size features record the magnitude of each event type:
 \begin{equation}
@@ -587,7 +587,7 @@ Bid- and ask-side log returns ($\ln(p^s_{1,t} / p^s_{1,t-1})$ for $s \in \{b, a\
 \subsection{Hawkes-Inspired Memory Features}\label{subsec:features:hawkes}
 
 Following Fabre and Challet~\cite{fabre_2025}, we define order flow variables inspired by the self-exciting structure of Hawkes processes.
-Let $(N^{L,b}_t)_{t \geq 0}$ and $(N^{L,a}_t)_{t \geq 0}$ denote the point processes counting the arrivals of buy and sell limit orders, and let $(N^{M,b}_t)_{t \geq 0}$ and $(N^{M,a}_t)_{t \geq 0}$ denote the point processes of buy and sell marketable orders respectively (using the aggressor-side convention: $N^{M,b}$ counts buy market orders that consume ask-side liquidity, and $N^{M,a}$ counts sell market orders that consume bid-side liquidity).
+Let $(N^{L,b}_t)_{t \geq 0}$ and $(N^{L,a}_t)_{t \geq 0}$ denote the point processes counting the arrivals of buy and sell limit orders, and let $(N^{M,b}_t)_{t \geq 0}$ and $(N^{M,a}_t)_{t \geq 0}$ denote the point processes of sell and buy marketable orders respectively (using the passive-side convention: $N^{M,b}$ counts sell market orders that consume bid-side liquidity, and $N^{M,a}$ counts buy market orders that consume ask-side liquidity).
 Each limit order carries two marks: a volume $v^{L,s}_t > 0$ and a distance of placement $\delta^{L,s}_t > 0$ from the best price, for $s \in \{b, a\}$.
 Each marketable order carries a volume mark $v^{M,s}_t > 0$.
 
@@ -707,12 +707,14 @@ where $\bar{T}_{\lambda_j}$ and $S_{\lambda_j}$ are the empirical mean and varia
 This two-stage procedure addresses the heavy tails typical of LOB features, which can cause unstable weight updates during training.
 A legacy \emph{Quantile} scaler (quantile transformation to a Gaussian followed by standard scaling) is retained for ablation purposes.
 In all cases, the scaler is fit on the training partition only and then applied to validation and test data, preventing information leakage across splits.
+When training the PNN (Section~\ref{subsec:models:pnn}), the target variable (log return) is excluded from Box-Cox and z-score normalisation: the PNN receives scaled features as input but predicts the \emph{raw} log return $y_t = \ln(p_{\text{mid},t+1}/p_{\text{mid},t})$.
+This ensures that the skew-normal parameters $(\mu, \sigma, \alpha)$ output by the PNN remain in the same physical units as the spread-derived thresholds used in the spoofing gain computation (Section~\ref{subsec:spoofing_gain}).
 
 % DONE (D2.2): Feature catalogue table inserted.
 
 \begin{table}[H]
 \centering
-\caption{Complete feature catalogue (${\sim}85$ features). All three models use the same feature set.}
+\caption{Complete feature catalogue (89 features). All three models use the same feature set.}
 \label{tab:feature_catalogue}
 \small
 \begin{tabular}{p{0.22\textwidth} p{0.18\textwidth} p{0.06\textwidth} p{0.44\textwidth}}
@@ -969,7 +971,7 @@ The following aspects of the implementation differ from the original paper.
   Our dataset provides Level-2 equity snapshots (aggregate volume at 10 price levels for TOTF.PA, Euronext Paris).
   The Hawkes-inspired features are approximated from volume changes at unchanged price levels, as described in Section~\ref{subsec:features:hawkes}.
   \item \textbf{Feature set.} The original paper uses 31 features (24 limit-order flow, 6 marketable-order flow, 1 spread).
-  Our pipeline uses approximately 80 features from seven groups (Section~\ref{sec:methodology:features}), including imbalance, dynamics, elasticity, volatility, event flow, OFI, and Hawkes features.
+  Our pipeline uses 89 features from seven groups (Section~\ref{sec:methodology:features}), including imbalance, dynamics, elasticity, volatility, event flow, OFI, and Hawkes features.
   The PNN receives only the last time step of each sequence window, preserving the single-step Markovian architecture of Fabre and Challet.
   \item \textbf{Batch size.} Fabre and Challet use a batch size of $2^{12} = 4{,}096$.
   Our implementation uses a batch size of 64.
@@ -1754,10 +1756,10 @@ The steps are applied independently per day; no information leaks across days du
     \item Imbalance (2): L1 and L5 order book imbalance.
     \item Dynamics (13): mid-price, spread, micro-price deviation, depth ratios, log return, volume deltas, velocity, acceleration, volatility, and net order flows.
     \item Elasticity (4): bid and ask sweep-to-fill costs and slopes.
-    \item Volatility (5): rolling standard deviation of returns at horizons 50 and 100, price range, absolute velocity, inter-event time $\Delta t$ and $\log \Delta t$.
+    \item Volatility (6): rolling standard deviation of returns at horizons 50 and 100, price range, absolute velocity, inter-event time $\Delta t$ and $\log \Delta t$.
     \item Weighted imbalance (3): Tao-style multilevel imbalance with decreasing, increasing, and constant weight schemes across the first five levels.
     \item Event flow (18): Poutr\'e-style rapidity features, including cancel and trade sizes, their moving averages (window\,$=$\,10), cancel and trade rapidities, and price speeds.
-    \item Hawkes memory and OFI (44): Fabre-Challet limit and market order flows with EWMA at short (halflife\,$=$\,5) and long (halflife\,$=$\,50) horizons, deep-order insertions at level~5, weighted flows with spatial decay ($\eta \in \{0.001, 0.1, 1, 10\}$) and temporal decay ($\beta \in \{10, 100, 1000\}$), and five-level order flow imbalance.
+    \item Hawkes memory and OFI (43): Fabre-Challet limit and market order flows with EWMA at short (halflife\,$=$\,5) and long (halflife\,$=$\,50) horizons, deep-order insertions at level~5, weighted flows with spatial decay ($\eta \in \{0.001, 0.1, 1, 10\}$) and temporal decay ($\beta \in \{10, 100, 1000\}$), and five-level order flow imbalance.
   \end{itemize}
 
 \item \textbf{Warmup trim.}

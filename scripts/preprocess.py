@@ -46,7 +46,7 @@ os.makedirs(OUT_DIR, exist_ok=True)
 # constants
 TIME_COL = "xltime"
 MARKET_OPEN_HOUR = 9.0
-MARKET_CLOSE_HOUR = 24.0   # aftermarket for testing
+MARKET_CLOSE_HOUR = 17.5   # Euronext Paris continuous session ends at 17:30
 WARMUP_STEPS = 3000
 WINDOW = 50
 
@@ -175,10 +175,10 @@ def process_file(filepath: str) -> None:
     out_path = os.path.join(OUT_DIR, f"{day_name}.parquet")
 
     if os.path.exists(out_path):
-        logger.info("  ✓ Already processed: %s", out_path)
+        logger.info("Already processed: %s", out_path)
         return
 
-    logger.info("  Loading %s ...", basename)
+    logger.info("Loading %s ...", basename)
     if filepath.endswith(".parquet"):
         import pyarrow.parquet as pq
         df = pq.ParquetFile(filepath).read().to_pandas()
@@ -215,7 +215,7 @@ def process_file(filepath: str) -> None:
 
     # Save
     result.to_parquet(out_path, index=False)
-    logger.info("  → Saved %s  (%d rows, %d cols)", out_path, len(result), len(result.columns))
+    logger.info("Saved %s  (%d rows, %d cols)", out_path, len(result), len(result.columns))
 
 
 def main():

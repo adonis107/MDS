@@ -20,7 +20,9 @@ import logging
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, os.path.dirname(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from detection.data.preprocessing import filter_market_hours
 from detection.features.dynamics import compute_dynamics, compute_elasticity

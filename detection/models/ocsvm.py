@@ -194,7 +194,75 @@ class OCSVM(nn.Module, BaseDetector):
                 parts.append(phi @ self._w - self._rho)
         return torch.cat(parts).cpu().numpy()
 
-    def predict(self, X):
-        """Predict labels: ``+1`` inlier, ``-1`` outlier."""
-        scores = self.decision_function(X)
-        return np.where(scores >= 0, 1, -1)
+    def dissimilarity_score(self, X):
+        r"""Continuous dissimilarity score from Poutré et al. (2024), §3.5.
+
+        Defined as the negated OC-SVM decision function:
+
+        .. math::
+
+            \mathrm{dissimilarity}(\mathbf{z}) = \rho
+            - \mathbf{w}^\top \tilde{\Phi}(\mathbf{z})
+            = -f(\mathbf{z})
+
+        Higher values indicate greater deviation from the learned support
+        of normal data. Positive values correspond to points outside the
+        decision boundary (outliers); negative values to inliers.
+
+        Range: :math:`\mathbb{R}` (unbounded).
+
+        Reference: Poutré, C., Chételat, D., & Morales, M. (2024).
+        *Deep unsupervised anomaly detection in high-frequency markets*.
+        J. Finance Data Sci., 10, 100129. Equation in Section 3.5.
+
+        Parameters
+        ----------
+        X : numpy array or torch Tensor, shape ``(n_samples, n_features)``
+
+        Returns
+        -------
+        numpy 1-D float array of length *n_samples*
+        """
+        return -self.decision_function(X)
+
+    def predict(self, X, tau=0.0):
+        """Binary anomaly prediction with explicit threshold.
+
+        Parameters
+        ----------
+        X : numpy array or torch Tensor, shape ``(n_samples, n_features)``
+        tau : float
+            Detection threshold on the dissimilarity score.
+            An observation is flagged anomalous when
+            ``dissimilarity_score(X) >= tau``.
+
+        Returns
+        -------
+        numpy 1-D int array: ``+1`` anomalous, ``-1`` normal.
+        """
+        scores = self.dissimilarity_score(X)
+        return np.where(scores >= tau, 1, -1)
+
+    @staticmethod
+    def fit_baseline_tau(scores_train, contamination=0.01):
+        """Compute a baseline threshold as a quantile of training scores.
+
+        The baseline tau is the (1 - contamination)-th quantile of the
+        training dissimilarity scores.  It serves as a starting threshold
+        when no data-driven method (POT, SPOT, DSPOT, RFDR) has been
+        calibrated, and as a fallback if those methods fail to fit.
+
+        Parameters
+        ----------
+        scores_train : array-like, shape ``(n_samples,)``
+            Dissimilarity scores computed on the training set.
+        contamination : float, default 0.01
+            Assumed fraction of anomalies in the training data.
+
+        Returns
+        -------
+        float
+            The baseline threshold.
+        """
+        scores_train = np.asarray(scores_train, dtype=np.float64)
+        return float(np.quantile(scores_train, 1.0 - contamination))

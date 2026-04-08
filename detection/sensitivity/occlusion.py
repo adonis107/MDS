@@ -183,9 +183,8 @@ def GroupedOcclusion(detector, x_seq, feature_names, group_by='side', baseline_m
         batch_tensor = batch_tensor.to(detector.device)
         latent_representations = detector.transformer.get_representation(batch_tensor)
         
-        # Get anomaly scores from OCSVM (negative decision function = anomaly score)
-        # decision_function accepts CUDA tensors directly via the Nyström OC-SVM
-        scores = -detector.ocsvm.decision_function(latent_representations)
+        # Get anomaly scores via dissimilarity_score (Poutré et al. 2024, §3.5)
+        scores = detector.ocsvm.dissimilarity_score(latent_representations)
     
     # Importance
     original_score = scores[0]

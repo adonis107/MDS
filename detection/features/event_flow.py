@@ -25,16 +25,16 @@ def compute_event_flow(df, features, sma_window=10):
     # Cancellation
     is_bid_cancel = (df['bid-price-1'] == df['bid-price-1'].shift(1)) & (d_volume_bid < 0)
     is_ask_cancel = (df['ask-price-1'] == df['ask-price-1'].shift(1)) & (d_volume_ask < 0)
-    # Trade
-    is_bid_trade = df['ask-price-1'] != df['ask-price-1'].shift(1)
-    is_ask_trade = df['bid-price-1'] != df['bid-price-1'].shift(1)
+    # Trade (aggressor-side convention: a "buy trade" means a buy market order lifted the ask)
+    is_buy_trade = df['ask-price-1'] != df['ask-price-1'].shift(1)
+    is_sell_trade = df['bid-price-1'] != df['bid-price-1'].shift(1)
 
     ### Event sizes ###
     # Magnitude of fake orders (cancellations) vs. real orders (trades)
     features["size_cancel_bid"] = np.where(is_bid_cancel, abs(d_volume_bid), 0)
     features["size_cancel_ask"] = np.where(is_ask_cancel, abs(d_volume_ask), 0)
-    features["size_trade_bid"] = np.where(is_bid_trade, df['bid-volume-1'].shift(1).fillna(0), 0)
-    features["size_trade_ask"] = np.where(is_ask_trade, df['ask-volume-1'].shift(1).fillna(0), 0)
+    features["size_trade_bid"] = np.where(is_buy_trade, df['bid-volume-1'].shift(1).fillna(0), 0)
+    features["size_trade_ask"] = np.where(is_sell_trade, df['ask-volume-1'].shift(1).fillna(0), 0)
 
     # Simple moving averages (paper uses window=10)
     features["SMA_size_bid"] = df["bid-volume-1"].rolling(window=sma_window).mean()
@@ -44,8 +44,8 @@ def compute_event_flow(df, features, sma_window=10):
     features["SMA_trade_bid"] = features["size_trade_bid"].rolling(window=sma_window).mean()
     features["SMA_trade_ask"] = features["size_trade_ask"].rolling(window=sma_window).mean()
 
-    # Ensure dt exists (small epsilon to avoid divide-by-zero)
-    if "dt" not in df.columns:
+    # Reuse dt from volatility if already computed; else compute from xltime  # ALIGNED: avoids overwriting volatility.py epsilon
+    if "dt" not in features.columns:
         dt = df.get('xltime', None)
         if dt is None:
             features["dt"] = 0.001
@@ -58,8 +58,8 @@ def compute_event_flow(df, features, sma_window=10):
     # High cancel rapidity may indicate spoofing activity
     features["rapidity_cancel_bid"] = is_bid_cancel.astype(int) / features["dt"]
     features["rapidity_cancel_ask"] = is_ask_cancel.astype(int) / features["dt"]
-    features["rapidity_trade_bid"] = is_bid_trade.astype(int) / features["dt"]
-    features["rapidity_trade_ask"] = is_ask_trade.astype(int) / features["dt"]
+    features["rapidity_trade_bid"] = is_buy_trade.astype(int) / features["dt"]
+    features["rapidity_trade_ask"] = is_sell_trade.astype(int) / features["dt"]
 
     # Price speed (return / delta_t)
     features["bid_price_speed"] = features["bid_log_return"].fillna(0) / features["dt"]

@@ -58,28 +58,32 @@ model:
     kernel: rbf
     gamma: auto
     nu: 0.01
+    baseline_tau_contamination: 0.01
 
 training:
-  epochs: 50
-  learning_rate: 0.001
+  epochs: 1000
+  learning_rate: 0.0001
   batch_size: 64
-  patience: 5
+  patience: 20
   device: auto          # auto | cpu | cuda
 
 threshold:
   method: dspot         # pot | spot | dspot | rfdr
-  risk: 0.0001
+  risk: 0.001
   init_level: 0.98
   num_candidates: 10
   # SPOT / DSPOT specific
-  num_init: null        # null = half of scores
-  depth: 50             # DSPOT drift depth
+  num_init: 1000
+  depth: 200             # DSPOT drift depth
   # RFDR specific
   window_size: 500
   alpha: 0.05
 
 evaluation:
   beta: 4               # F-beta score parameter
+  holdout_files: 12      # Total held-out files (N - holdout_files = training)
+  test_proximate: 9      # T_A: files adjacent to training boundary
+  test_distal: 3         # T_B: final files, furthest from training
 
 output:
   results_dir: results

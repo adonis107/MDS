@@ -21,7 +21,7 @@ class BaseDetector(ABC):
     @abstractmethod
     def fit(self, data): pass
     @abstractmethod
-    def predict(self, data): pass
+    def predict(self, data, tau=0.0): pass
 
 
 class BaseThreshold(ABC):

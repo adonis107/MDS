@@ -70,6 +70,11 @@ class TransformerOCSVM(BaseDetector):
         self.ocsvm.fit(X_train_latent)
 
     def predict(self, dataloader):
+        """Return continuous dissimilarity scores (higher = more anomalous).
+
+        This is the Poutré et al. (2024) dissimilarity function applied to
+        the bottleneck representations extracted by the Transformer encoder.
+        """
         self.transformer.eval()
         device = self.device
         self.transformer.to(device)
@@ -83,6 +88,5 @@ class TransformerOCSVM(BaseDetector):
 
         X_test_latent = torch.cat(latent_vectors, dim=0)
 
-        # negate so higher = more anomalous
-        return -self.ocsvm.decision_function(X_test_latent)
+        return self.ocsvm.dissimilarity_score(X_test_latent)
     

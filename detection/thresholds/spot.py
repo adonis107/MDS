@@ -9,7 +9,7 @@ def StreamingPeakOverThreshold(
         data: np.array, 
         num_init: int, 
         num_candidates: int,
-        risk: float = 1e-4, 
+        risk: float = 1e-3, 
         init_level: float = 0.98, 
         epsilon: float = 1e-8,
     ):

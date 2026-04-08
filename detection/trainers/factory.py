@@ -31,7 +31,7 @@ def build_fresh_model(
         return transformer, detector
 
     if model_type == "pnn":
-        input_dim = seq_length * num_features
+        input_dim = num_features  # ALIGNED: Markovian single-step predictor (report §3.2.2), uses last time step only
         model = PNN(input_dim=input_dim, hidden_dim=pnn_hidden_dim).to(device)
         return model, None
 
@@ -72,7 +72,7 @@ def load_model(
         return transformer, ocsvm
 
     if model_type == "pnn":
-        input_dim = seq_length * num_features
+        input_dim = num_features  # ALIGNED: Markovian single-step predictor (report §3.2.2), uses last time step only
         model = PNN(input_dim=input_dim, hidden_dim=pnn_hidden_dim).to(device)
         model.load_state_dict(
             torch.load(weights_path, map_location=device, weights_only=True))

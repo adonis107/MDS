@@ -18,6 +18,7 @@ import glob
 import json
 import logging
 
+import gc
 import numpy as np
 import pandas as pd
 import torch
@@ -243,16 +244,14 @@ if _tf_model is not None and _tf_ocsvm is not None:
 all_scores = {mt: [] for mt in MODEL_TYPES}   # raw model scores
 all_preds = {mt: [] for mt in MODEL_TYPES}     # binary predictions from threshold
 all_period_labels_seq = []
-all_feat_values_seq = []
 day_boundaries = [0]
 day_names = []
 day_split_labels = []
+processed_test_files = []  # track files that were actually scored
 
 for file_idx, test_file in enumerate(TEST_FILES):
     day_name = os.path.basename(test_file)
     split_label = _get_split_label(test_file)
-    day_names.append(day_name)
-    day_split_labels.append(split_label)
     logger.info("=" * 70)
     logger.info("Test file %d/%d: %s  [%s]", file_idx + 1, len(TEST_FILES), day_name, split_label)
 
@@ -267,13 +266,16 @@ for file_idx, test_file in enumerate(TEST_FILES):
     if n_seq_day <= 0:
         logger.warning("Day %s has only %d rows (< SEQ_LENGTH=%d), skipping.",
                        day_name, len(features_day), SEQ_LENGTH)
+        del df_day, features_day
         continue
+
+    # Append only for non-skipped files (keeps day_names aligned with day_boundaries)
+    day_names.append(day_name)
+    day_split_labels.append(split_label)
+    processed_test_files.append(test_file)
 
     period_labels_day_seq = period_labels_day[SEQ_LENGTH: SEQ_LENGTH + n_seq_day]
     all_period_labels_seq.append(period_labels_day_seq)
-
-    feat_values_day_seq = features_day.iloc[SEQ_LENGTH: SEQ_LENGTH + n_seq_day].reset_index(drop=True)
-    all_feat_values_seq.append(feat_values_day_seq)
 
     logger.info("Day rows: %d → %d sequences", len(features_day), n_seq_day)
 
@@ -383,13 +385,17 @@ for file_idx, test_file in enumerate(TEST_FILES):
 
     day_boundaries.append(day_boundaries[-1] + n_seq_day)
 
+    # Free per-day memory
+    del df_day, features_day, spread_raw_day, period_labels_day, time_frac_day
+    gc.collect()
+
 # Concatenate across days
 for mt in MODEL_TYPES:
     all_scores[mt] = np.concatenate(all_scores[mt])
     all_preds[mt] = np.concatenate(all_preds[mt])
 
 period_labels_seq = np.concatenate(all_period_labels_seq)
-feat_values_seq = pd.concat(all_feat_values_seq, ignore_index=True)
+del all_period_labels_seq
 
 total_samples = len(next(iter(all_scores.values())))
 logger.info("Scoring complete: %d total samples across %d test files.", total_samples, len(TEST_FILES))
@@ -494,49 +500,112 @@ consensus_df = pd.DataFrame(consensus_rows)
 consensus_df.to_csv(os.path.join(OUTPUT_DIR, "consensus_agreement.csv"), index=False)
 logger.info("Saved consensus agreement.")
 
-# 7. Root cause analysis (top features per model)
+# 7. Root cause analysis (top features per model) — streaming
+#    Re-read files one at a time to avoid accumulating all feature data in RAM.
 rca_rows = []
+
 for mt in MODEL_TYPES:
     scores = all_scores[mt]
     preds = all_preds[mt]
-    n = min(len(scores), len(feat_values_seq))
-
-    normal_mask = preds[:n] == 0
-    if normal_mask.sum() <= 10:
+    n = len(scores)
+    if n == 0:
         continue
 
-    normal_mean = feat_values_seq.iloc[:n][normal_mask].mean()
-    normal_std = feat_values_seq.iloc[:n][normal_mask].std().replace(0, 1e-10)
+    top_idx_global = int(np.argmax(scores))
+    threshold_90 = np.percentile(scores, 90)
 
-    # Top anomaly
-    top_idx = int(np.argmax(scores[:n]))
-    top_feat = feat_values_seq.iloc[top_idx]
-    z_scores = ((top_feat - normal_mean) / normal_std).abs().sort_values(ascending=False)
-    for rank, (feat_name, z) in enumerate(z_scores.head(15).items(), 1):
-        rca_rows.append({
-            "model": mt,
-            "analysis": "top_anomaly",
-            "rank": rank,
-            "feature": feat_name,
-            "z_score": round(float(z), 4),
-            "value": round(float(top_feat[feat_name]), 6),
-        })
+    # Online accumulators (Welford-style sums for mean/std)
+    normal_sum = None
+    normal_sq_sum = None
+    normal_count = 0
+    top10_sum = None
+    top10_count = 0
+    top_feat_row = None
+    feat_col_names = None
 
-    # Top 10% anomalies mean deviation
-    threshold_10pct = np.percentile(scores[:n], 90)
-    top10_mask = scores[:n] >= threshold_10pct
-    top10_feats = feat_values_seq.iloc[:n][top10_mask]
-    top10_mean = top10_feats.mean()
-    diff = ((top10_mean - normal_mean) / normal_std).abs().sort_values(ascending=False)
-    for rank, (feat_name, d) in enumerate(diff.head(15).items(), 1):
-        rca_rows.append({
-            "model": mt,
-            "analysis": "top10pct_mean",
-            "rank": rank,
-            "feature": feat_name,
-            "z_score": round(float(d), 4),
-            "value": round(float(top10_mean[feat_name]), 6),
-        })
+    logger.info("RCA streaming pass for %s (%d files)...", mt, len(processed_test_files))
+    for day_idx, test_file in enumerate(processed_test_files):
+        lo = day_boundaries[day_idx]
+        hi = day_boundaries[day_idx + 1]
+        n_day = hi - lo
+        if n_day == 0:
+            continue
+
+        _, features_day = load_processed(test_file, "xltime", LOB_COLUMNS)
+        feat_slice = features_day.iloc[SEQ_LENGTH: SEQ_LENGTH + n_day]
+        if feat_col_names is None:
+            feat_col_names = feat_slice.columns.tolist()
+        feat_arr = feat_slice.values.astype(np.float64)
+        del features_day, feat_slice
+
+        day_preds = preds[lo:hi]
+        day_scores = scores[lo:hi]
+
+        # Normal samples (preds == 0)
+        nmask = day_preds == 0
+        if nmask.any():
+            nf = feat_arr[nmask]
+            if normal_sum is None:
+                normal_sum = nf.sum(axis=0)
+                normal_sq_sum = (nf ** 2).sum(axis=0)
+            else:
+                normal_sum += nf.sum(axis=0)
+                normal_sq_sum += (nf ** 2).sum(axis=0)
+            normal_count += int(nmask.sum())
+
+        # Top anomaly (single highest-scoring sample globally)
+        if lo <= top_idx_global < hi:
+            top_feat_row = feat_arr[top_idx_global - lo]
+
+        # Top 10% anomalies
+        t10mask = day_scores >= threshold_90
+        if t10mask.any():
+            t10 = feat_arr[t10mask]
+            if top10_sum is None:
+                top10_sum = t10.sum(axis=0)
+            else:
+                top10_sum += t10.sum(axis=0)
+            top10_count += int(t10mask.sum())
+
+        del feat_arr
+    gc.collect()
+
+    if normal_count <= 10 or feat_col_names is None:
+        continue
+
+    normal_mean = normal_sum / normal_count
+    normal_var = normal_sq_sum / normal_count - normal_mean ** 2
+    normal_std = np.sqrt(np.maximum(normal_var, 0))
+    normal_std[normal_std == 0] = 1e-10
+
+    # Top anomaly z-scores
+    if top_feat_row is not None:
+        z = np.abs((top_feat_row - normal_mean) / normal_std)
+        order = np.argsort(z)[::-1]
+        for rank, idx in enumerate(order[:15], 1):
+            rca_rows.append({
+                "model": mt,
+                "analysis": "top_anomaly",
+                "rank": rank,
+                "feature": feat_col_names[idx],
+                "z_score": round(float(z[idx]), 4),
+                "value": round(float(top_feat_row[idx]), 6),
+            })
+
+    # Top 10% mean deviation
+    if top10_count > 0 and top10_sum is not None:
+        top10_mean = top10_sum / top10_count
+        diff = np.abs((top10_mean - normal_mean) / normal_std)
+        order = np.argsort(diff)[::-1]
+        for rank, idx in enumerate(order[:15], 1):
+            rca_rows.append({
+                "model": mt,
+                "analysis": "top10pct_mean",
+                "rank": rank,
+                "feature": feat_col_names[idx],
+                "z_score": round(float(diff[idx]), 4),
+                "value": round(float(top10_mean[idx]), 6),
+            })
 
 rca_df = pd.DataFrame(rca_rows)
 rca_df.to_csv(os.path.join(OUTPUT_DIR, "root_cause_analysis.csv"), index=False)

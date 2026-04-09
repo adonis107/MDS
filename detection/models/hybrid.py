@@ -86,6 +86,9 @@ class TransformerOCSVM(BaseDetector):
                 latent = self.transformer.get_representation(batch)
                 latent_vectors.append(latent)
 
+        if not latent_vectors:
+            return np.empty(0)
+
         X_test_latent = torch.cat(latent_vectors, dim=0)
 
         return self.ocsvm.dissimilarity_score(X_test_latent)

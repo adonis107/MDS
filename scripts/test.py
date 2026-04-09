@@ -264,6 +264,10 @@ for file_idx, test_file in enumerate(TEST_FILES):
     spread_raw_day = (df_day["ask-price-1"] - df_day["bid-price-1"]).values
 
     n_seq_day = len(features_day) - SEQ_LENGTH
+    if n_seq_day <= 0:
+        logger.warning("Day %s has only %d rows (< SEQ_LENGTH=%d), skipping.",
+                       day_name, len(features_day), SEQ_LENGTH)
+        continue
 
     period_labels_day_seq = period_labels_day[SEQ_LENGTH: SEQ_LENGTH + n_seq_day]
     all_period_labels_seq.append(period_labels_day_seq)

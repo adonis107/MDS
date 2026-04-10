@@ -261,6 +261,7 @@ for file_idx, test_file in enumerate(TEST_FILES):
     period_labels_day = assign_period(time_frac_day, PERIODS)
 
     spread_raw_day = (df_day["ask-price-1"] - df_day["bid-price-1"]).values
+    mid_price_day = 0.5 * (df_day["ask-price-1"] + df_day["bid-price-1"]).values
 
     n_seq_day = len(features_day) - SEQ_LENGTH
     if n_seq_day <= 0:
@@ -342,13 +343,21 @@ for file_idx, test_file in enumerate(TEST_FILES):
             alpha_arr = np.concatenate(all_alpha)
 
             spread_seq = spread_raw_day[SEQ_LENGTH: SEQ_LENGTH + len(mu_arr)]
+            mid_seq = mid_price_day[SEQ_LENGTH: SEQ_LENGTH + len(mu_arr)]
             if len(spread_seq) < len(mu_arr):
                 spread_seq = np.pad(spread_seq, (0, len(mu_arr) - len(spread_seq)), mode="edge")
+                mid_seq = np.pad(mid_seq, (0, len(mu_arr) - len(mid_seq)), mode="edge")
             spread_seq = np.abs(spread_seq)
             spread_seq = np.where(spread_seq > 0, spread_seq, 1e-4)
 
+            # PNN outputs are in log-return units; the spoofing-gain formula
+            # (Fabre & Challet) expects EUR price changes.  Convert via the
+            # first-order approximation  Δp ≈ r · p_mid.
+            mu_eur = mu_arr * mid_seq
+            sigma_eur = sigma_arr * mid_seq
+
             scores = compute_spoofing_gains_batch(
-                mu_arr, sigma_arr, alpha_arr, spread_seq,
+                mu_eur, sigma_eur, alpha_arr, spread_seq,
                 delta_a=SPOOF_DELTA_A, delta_b=SPOOF_DELTA_B,
                 Q=SPOOF_Q, q=SPOOF_q,
                 fees=SPOOF_FEES, side="ask",
@@ -386,7 +395,7 @@ for file_idx, test_file in enumerate(TEST_FILES):
     day_boundaries.append(day_boundaries[-1] + n_seq_day)
 
     # Free per-day memory
-    del df_day, features_day, spread_raw_day, period_labels_day, time_frac_day
+    del df_day, features_day, spread_raw_day, mid_price_day, period_labels_day, time_frac_day
     gc.collect()
 
 # Concatenate across days

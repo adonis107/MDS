@@ -215,6 +215,7 @@ def compute_pnn_stage(
     model: torch.nn.Module,
     sequences: np.ndarray,
     spread_seq: np.ndarray,
+    mid_price_seq: np.ndarray,
     batch_size: int,
     gain_cfg: Dict[str, float],
 ) -> Dict[str, np.ndarray]:
@@ -238,15 +239,23 @@ def compute_pnn_stage(
     alpha_arr = np.concatenate(all_alpha) if all_alpha else np.empty((0,), dtype=np.float32)
 
     spread_seq = spread_seq[: len(mu_arr)]
+    mid_price_seq = mid_price_seq[: len(mu_arr)]
     if len(spread_seq) < len(mu_arr):
         spread_seq = np.pad(spread_seq, (0, len(mu_arr) - len(spread_seq)), mode="edge")
+        mid_price_seq = np.pad(mid_price_seq, (0, len(mu_arr) - len(mid_price_seq)), mode="edge")
 
     spread_seq = np.abs(spread_seq)
     spread_seq = np.where(spread_seq > 0, spread_seq, 1e-4)
 
+    # PNN outputs are in log-return units; the spoofing-gain formula
+    # (Fabre & Challet) expects EUR price changes.  Convert via the
+    # first-order approximation  Δp ≈ r · p_mid.
+    mu_eur = mu_arr * mid_price_seq
+    sigma_eur = sigma_arr * mid_price_seq
+
     gain_score = compute_spoofing_gains_batch(
-        mu_arr,
-        sigma_arr,
+        mu_eur,
+        sigma_eur,
         alpha_arr,
         spread_seq,
         delta_a=gain_cfg["delta_a"],
@@ -408,6 +417,7 @@ def main() -> None:
         )
 
         spread_raw_day = (df_day["ask-price-1"] - df_day["bid-price-1"]).to_numpy()
+        mid_price_day = 0.5 * (df_day["ask-price-1"] + df_day["bid-price-1"]).to_numpy()
 
         day_model_summary = {}
 
@@ -441,10 +451,12 @@ def main() -> None:
 
             elif model_type == "pnn":
                 spread_seq = spread_raw_day[args.seq_length : args.seq_length + len(sequences)]
+                mid_seq = mid_price_day[args.seq_length : args.seq_length + len(sequences)]
                 stage = compute_pnn_stage(
                     model=model,
                     sequences=sequences,
                     spread_seq=spread_seq,
+                    mid_price_seq=mid_seq,
                     batch_size=args.batch_size,
                     gain_cfg=gain_cfg,
                 )

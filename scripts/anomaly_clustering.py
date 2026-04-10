@@ -163,7 +163,7 @@ def _migrate_monolithic_cache(results_dir, year):
     return migrated
 
 
-def compute_file_scores(features_day, spread_raw, feature_names_map, loaded_models,
+def compute_file_scores(features_day, spread_raw, mid_price_raw, feature_names_map, loaded_models,
                         loaded_scalers, args):
     results = {}
     spoof_fees = {"maker": args.spoof_maker_fee, "taker": args.spoof_taker_fee}
@@ -226,12 +226,20 @@ def compute_file_scores(features_day, spread_raw, feature_names_map, loaded_mode
             alpha_arr = np.concatenate(all_alpha)
 
             spread_seq = spread_raw[args.seq_length: args.seq_length + len(mu_arr)]
+            mid_seq = mid_price_raw[args.seq_length: args.seq_length + len(mu_arr)]
             if len(spread_seq) < len(mu_arr):
                 spread_seq = np.pad(spread_seq, (0, len(mu_arr) - len(spread_seq)), mode="edge")
+                mid_seq = np.pad(mid_seq, (0, len(mu_arr) - len(mid_seq)), mode="edge")
             spread_seq = np.where(np.abs(spread_seq) > 0, np.abs(spread_seq), 1e-4)
 
+            # PNN outputs are in log-return units; the spoofing-gain formula
+            # (Fabre & Challet) expects EUR price changes.  Convert via the
+            # first-order approximation  Δp ≈ r · p_mid.
+            mu_eur = mu_arr * mid_seq
+            sigma_eur = sigma_arr * mid_seq
+
             scores = compute_spoofing_gains_batch(
-                mu_arr, sigma_arr, alpha_arr, spread_seq,
+                mu_eur, sigma_eur, alpha_arr, spread_seq,
                 delta_a=args.spoof_delta_a, delta_b=args.spoof_delta_b,
                 Q=args.spoof_Q, q=args.spoof_q,
                 fees=spoof_fees, side="ask",
@@ -435,6 +443,7 @@ def main():
         time_frac_day = get_time_frac(df_day)[: len(features_day)]
         period_labels = assign_period(time_frac_day, PERIODS)
         spread_raw = (df_day["ask-price-1"] - df_day["bid-price-1"]).values
+        mid_price_raw = 0.5 * (df_day["ask-price-1"] + df_day["bid-price-1"]).values
 
         all_period_labels.append(period_labels[args.seq_length: args.seq_length + n_seq])
         all_feat_values.append(
@@ -452,7 +461,7 @@ def main():
             else:
                 logger.info("[%d] Computing: %s", year, basename)
                 res = compute_file_scores(
-                    features_day, spread_raw,
+                    features_day, spread_raw, mid_price_raw,
                     feature_names_by_year[year],
                     loaded_models_by_year[year],
                     loaded_scalers_by_year[year],

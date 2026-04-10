@@ -25,8 +25,7 @@
 #SBATCH --export=ALL
 #SBATCH --propagate=NONE
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/env.sh"
+source "$HOME/MDS-PDMM/scripts/slurm/env.sh"
 
 : "${MDS_MODEL:?Set MDS_MODEL (transformer_ocsvm|pnn|prae)}"
 : "${MDS_YEAR:?Set MDS_YEAR (2015|2017)}"

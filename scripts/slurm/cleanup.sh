@@ -25,8 +25,7 @@
 #SBATCH --export=NONE
 #SBATCH --propagate=NONE
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/env.sh"
+source "$HOME/MDS-PDMM/scripts/slurm/env.sh"
 
 echo "=== Cleaning up intermediate files ==="
 

@@ -21,13 +21,12 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
 #SBATCH --mem=60G
-#SBATCH --time=12:00:00
+#SBATCH --time=24:00:00
 
 #SBATCH --export=ALL
 #SBATCH --propagate=NONE
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/env.sh"
+source "$HOME/MDS-PDMM/scripts/slurm/env.sh"
 
 : "${MDS_YEAR:?Set MDS_YEAR (2015|2017)}"
 

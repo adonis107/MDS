@@ -77,7 +77,7 @@ TEST_PROXIMATE_FILES = YEAR_FILES[NUM_TRAIN_DAYS:NUM_TRAIN_DAYS + 9]
 TEST_DISTAL_FILES = YEAR_FILES[NUM_TRAIN_DAYS + 9:]
 
 # Out-of-sample years (always included)
-OOS_PATTERNS = ["2009-*", "2010-*"]
+OOS_PATTERNS = ["2010-*"]
 # Cross-year: if training on 2015, also test on 2017 and vice versa
 CROSS_YEAR = "2017" if TRAIN_YEAR == "2015" else "2015"
 OOS_PATTERNS.append(f"{CROSS_YEAR}-*")
@@ -535,6 +535,7 @@ for mt in MODEL_TYPES:
         feat_slice = features_day.iloc[SEQ_LENGTH: SEQ_LENGTH + n_day]
         if feat_col_names is None:
             feat_col_names = feat_slice.columns.tolist()
+        feat_slice = feat_slice.reindex(columns=feat_col_names, fill_value=0.0)
         feat_arr = feat_slice.values.astype(np.float64)
         del features_day, feat_slice
 

@@ -26,8 +26,7 @@
 #SBATCH --export=ALL
 #SBATCH --propagate=NONE
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/env.sh"
+source "$HOME/MDS-PDMM/scripts/slurm/env.sh"
 
 echo "=== Phase 3a: Inference cache ==="
 for YEAR in 2015 2017; do

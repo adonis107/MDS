@@ -28,7 +28,7 @@ from sklearn.preprocessing import MinMaxScaler
 from torch.utils.data import DataLoader, TensorDataset
 
 from detection.data.loaders import create_sequences, load_processed
-from detection.data.preprocessing import get_time_frac, assign_period
+from detection.data.preprocessing import get_time_frac, assign_period, split_first_hour_blocks
 from detection.models import hybrid, pnn, prae
 from detection.models.ocsvm import OCSVM
 from detection.models.transformer import BottleneckTransformer
@@ -94,6 +94,24 @@ OOS_FILES = sorted(set(OOS_FILES))
 TEST_FILES = TEST_PROXIMATE_FILES + TEST_DISTAL_FILES + OOS_FILES
 TEST_FILES = sorted(set(TEST_FILES))
 
+# ── Chunked execution for SLURM parallelism ──────────────────
+# Set MDS_NUM_CHUNKS > 1 and MDS_CHUNK=0..N-1 to split scoring across
+# multiple SLURM jobs.  Each chunk saves to test_output/chunk_X/.
+# Run test_merge.py afterward to combine results and run full post-hoc.
+NUM_CHUNKS = int(os.environ.get("MDS_NUM_CHUNKS", "1"))
+CHUNK_IDX = int(os.environ.get("MDS_CHUNK", "0"))
+
+if NUM_CHUNKS > 1:
+    _n = len(TEST_FILES)
+    _chunk_size = (_n + NUM_CHUNKS - 1) // NUM_CHUNKS
+    _start = CHUNK_IDX * _chunk_size
+    _end = min(_start + _chunk_size, _n)
+    logger.info("Chunk %d/%d: scoring files [%d, %d) of %d total",
+                CHUNK_IDX, NUM_CHUNKS, _start, _end, _n)
+    TEST_FILES = TEST_FILES[_start:_end]
+    OUTPUT_DIR = os.path.join(OUTPUT_DIR, f"chunk_{CHUNK_IDX}")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
 # Build a mapping: filename -> split label
 _proximate_set = set(os.path.basename(f) for f in TEST_PROXIMATE_FILES)
 _distal_set = set(os.path.basename(f) for f in TEST_DISTAL_FILES)
@@ -135,6 +153,7 @@ RFDR_WINDOW = 500
 RFDR_ALPHA = 0.05
 
 # Baseline tau for OC-SVM (quantile-based, see Section 3.2.1)
+OCSVM_BASELINE_TAU_CONTAMINATION = 0.01
 
 # Spoofing gain (PNN)
 SPOOF_Q = 4500
@@ -188,11 +207,52 @@ for model_type in MODEL_TYPES:
     logger.info("Loaded model & scaler for %s (%d features)", model_type, num_features)
 
 # Compute baseline tau for TF-OC-SVM
-# The natural decision boundary of the OC-SVM dissimilarity score is 0:
-# positive values lie outside the learned support (outliers).
-# This is the theoretically correct threshold (Poutré et al., 2024, §3.5).
-OCSVM_BASELINE_TAU = 0.0
-logger.info("OC-SVM baseline tau = %.6f (natural dissimilarity boundary)", OCSVM_BASELINE_TAU)
+# Dissimilarity scores on training data => quantile-based baseline.
+# Used as threshold when no EVT/RFDR thresholding has been calibrated.
+OCSVM_BASELINE_TAU = 0.0  # fallback if computation fails
+_tf_model, _tf_ocsvm = loaded_models.get("transformer_ocsvm", (None, None))
+if _tf_model is not None and _tf_ocsvm is not None:
+    _tf_scaler = loaded_scalers["transformer_ocsvm"]
+    _tf_feat_names = feature_names_map["transformer_ocsvm"]
+    _train_files = YEAR_FILES[:NUM_TRAIN_DAYS]
+    _train_scores_all = []
+    _tf_model.eval()
+    logger.info("Computing baseline tau on %d training files (contamination=%.2f%%)...",
+                len(_train_files), 100 * OCSVM_BASELINE_TAU_CONTAMINATION)
+    with torch.no_grad():
+        for _tf in _train_files[:5]:  # first 5 days for speed
+            try:
+                _df, _feat = load_processed(_tf, "xltime", LOB_COLUMNS)
+                for _c in _tf_feat_names:
+                    if _c not in _feat.columns:
+                        _feat[_c] = 0.0
+                _feat = _feat[_tf_feat_names]
+                _train_block, _ = split_first_hour_blocks(
+                    _df["xltime"].values, _feat, 9.0, 60, 5, 5)
+                if len(_train_block) < SEQ_LENGTH + 1:
+                    continue
+                _scaled = _tf_scaler.transform(_train_block.values.astype(np.float32)).astype(np.float32)
+                _seqs = create_sequences(_scaled, SEQ_LENGTH)
+                if len(_seqs) == 0:
+                    continue
+                _x = torch.tensor(_seqs, dtype=torch.float32)
+                _ds = TensorDataset(_x, _x)
+                _loader = DataLoader(_ds, batch_size=BATCH_SIZE, shuffle=False)
+                _det = hybrid.TransformerOCSVM.__new__(hybrid.TransformerOCSVM)
+                _det.transformer = _tf_model
+                _det.ocsvm = _tf_ocsvm
+                _scores_day = _det.predict(_loader)
+                _train_scores_all.append(_scores_day)
+            except Exception as e:
+                logger.warning("Baseline tau: skipping %s: %s", os.path.basename(_tf), e)
+    if _train_scores_all:
+        _all = np.concatenate(_train_scores_all)
+        OCSVM_BASELINE_TAU = OCSVM.fit_baseline_tau(_all, OCSVM_BASELINE_TAU_CONTAMINATION)
+        logger.info("Baseline tau = %.6f (%.0f training scores, contamination=%.2f%%)",
+                     OCSVM_BASELINE_TAU, len(_all), 100 * OCSVM_BASELINE_TAU_CONTAMINATION)
+    else:
+        logger.warning("Could not compute baseline tau; using default tau=0.0")
+    del _train_scores_all
 
 # %% [markdown]
 # ## Score Test Files

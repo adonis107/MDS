@@ -572,21 +572,25 @@ def fig_jaccard_heatmaps():
 # Figure 5.3.5 — T_A vs T_B scatter
 # ────────────────────────────────────────────────────────────────────
 def fig_ta_vs_tb():
+    from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
+
     fig, ax = plt.subplots(figsize=(5.5, 5))
     markers = {"transformer_ocsvm": "o", "pnn": "s", "prae": "D"}
+
+    # Collect all points
+    all_ta, all_tb = [], []
     for mk in MODEL_KEYS:
         for meth in METHOD_KEYS:
             r = ALL_RESULTS[mk][meth]
+            all_ta.append(r["rate_ta"])
+            all_tb.append(r["rate_tb"])
             ax.scatter(r["rate_ta"], r["rate_tb"],
                        color=METHOD_COLORS[meth],
                        marker=markers[mk], s=60, edgecolor="black", linewidth=0.5,
                        zorder=3)
 
     # diagonal
-    lim_max = max(
-        max(ALL_RESULTS[mk][m]["rate_ta"] for mk in MODEL_KEYS for m in METHOD_KEYS),
-        max(ALL_RESULTS[mk][m]["rate_tb"] for mk in MODEL_KEYS for m in METHOD_KEYS),
-    ) * 1.15
+    lim_max = max(max(all_ta), max(all_tb)) * 1.15
     ax.plot([0, lim_max], [0, lim_max], "k--", linewidth=0.8, alpha=0.5)
     ax.set_xlim(0, lim_max)
     ax.set_ylim(0, lim_max)
@@ -596,6 +600,31 @@ def fig_ta_vs_tb():
     ax.set_aspect("equal")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+
+    # ── Inset zoom on low-rate region ──
+    # Determine zoom limits: exclude extreme outliers (> 5%)
+    low_ta = [v for v in all_ta if v <= 5]
+    low_tb = [v for v in all_tb if v <= 5]
+    if low_ta and low_tb:
+        zoom_max = max(max(low_ta), max(low_tb)) * 1.25
+        axins = inset_axes(ax, width="45%", height="45%", loc="center right",
+                           borderpad=1.5)
+        # Re-plot points in inset
+        for mk in MODEL_KEYS:
+            for meth in METHOD_KEYS:
+                r = ALL_RESULTS[mk][meth]
+                axins.scatter(r["rate_ta"], r["rate_tb"],
+                              color=METHOD_COLORS[meth],
+                              marker=markers[mk], s=40, edgecolor="black",
+                              linewidth=0.4, zorder=3)
+        axins.plot([0, zoom_max], [0, zoom_max], "k--", linewidth=0.6, alpha=0.4)
+        axins.set_xlim(0, zoom_max)
+        axins.set_ylim(0, zoom_max)
+        axins.set_aspect("equal")
+        axins.tick_params(labelsize=7)
+        axins.set_title("Zoom (rates \u2264 5%)", fontsize=8)
+        mark_inset(ax, axins, loc1=2, loc2=4, fc="none", ec="0.5",
+                   linewidth=0.8, linestyle="--")
 
     # legend: markers for models, colors for methods
     handles_model = [plt.Line2D([0], [0], marker=markers[mk], color="gray",

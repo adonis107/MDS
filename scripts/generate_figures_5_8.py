@@ -354,12 +354,18 @@ def fig_price_path(results):
         mf = res["mean_flagged_path"]
         mnf = res["mean_nonflagged_path"]
 
-        if np.all(np.isfinite(mnf)):
-            ax.plot(t, mnf, color=GREY, lw=1, label="Non-flagged", zorder=2)
-        if np.all(np.isfinite(mf)):
-            ax.plot(t, mf, color=BLUE, lw=1.5,
+        finite_mnf = np.isfinite(mnf)
+        finite_mf = np.isfinite(mf)
+        if np.any(finite_mnf):
+            ax.plot(t, np.where(finite_mnf, mnf, np.nan),
+                    color=GREY, lw=1, label="Non-flagged", zorder=2)
+        if np.any(finite_mf):
+            mf_safe = np.where(finite_mf, mf, np.nan)
+            ax.plot(t, mf_safe, color=BLUE, lw=1.5,
                     label=r"Flagged ($\geq$1 model)", zorder=3)
-            ax.fill_between(t, res["ci_lo"], res["ci_hi"],
+            ci_lo = np.where(finite_mf, res["ci_lo"], np.nan)
+            ci_hi = np.where(finite_mf, res["ci_hi"], np.nan)
+            ax.fill_between(t, ci_lo, ci_hi,
                             color=BLUE, alpha=0.2, zorder=2)
 
         ax.axvline(0, color="black", ls="--", lw=0.8, alpha=0.5)

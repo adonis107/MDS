@@ -83,7 +83,7 @@ for ci in range(NUM_CHUNKS):
     for mt in MODEL_TYPES:
         all_scores[mt].append(np.load(os.path.join(chunk_dir, f"{mt}_scores.npy")))
         all_preds[mt].append(np.load(os.path.join(chunk_dir, f"{mt}_preds.npy")))
-    all_period_labels.append(np.load(os.path.join(chunk_dir, "period_labels.npy")))
+    all_period_labels.append(np.load(os.path.join(chunk_dir, "period_labels.npy"), allow_pickle=True))
 
     with open(os.path.join(chunk_dir, "test_meta.json")) as f:
         cmeta = json.load(f)
@@ -115,7 +115,7 @@ for mt in MODEL_TYPES:
     n_anom = all_preds[mt].sum()
     logger.info("  %s: %d anomalies (%.2f%%)", mt, n_anom, 100 * n_anom / total_samples)
 
-# ── Save merged scores/preds ──────────────────────────────────
+# Save merged scores/preds
 for mt in MODEL_TYPES:
     np.save(os.path.join(OUTPUT_DIR, f"{mt}_scores.npy"), all_scores[mt])
     np.save(os.path.join(OUTPUT_DIR, f"{mt}_preds.npy"), all_preds[mt])
@@ -134,10 +134,7 @@ meta = {
 with open(os.path.join(OUTPUT_DIR, "test_meta.json"), "w") as f:
     json.dump(meta, f, indent=2)
 
-# ══════════════════════════════════════════════════════════════
-#  Post-hoc analysis (reproduced from test.py)
-# ══════════════════════════════════════════════════════════════
-
+# Post-hoc analysis
 # 4. Per-period anomaly rates
 rows = []
 for mt in MODEL_TYPES:
@@ -205,7 +202,7 @@ consensus_df = pd.DataFrame(consensus_rows)
 consensus_df.to_csv(os.path.join(OUTPUT_DIR, "consensus_agreement.csv"), index=False)
 logger.info("Saved consensus agreement.")
 
-# 7. Root cause analysis (top features per model) — streaming
+# 7. Root cause analysis (top features per model) - streaming
 rca_rows = []
 
 for mt in MODEL_TYPES:

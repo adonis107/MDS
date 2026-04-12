@@ -1,0 +1,61 @@
+{
+  "2015": {
+    "tfocsvm": {},
+    "pnn": {},
+    "prae": {}
+  },
+  "2017": {
+    "tfocsvm": {
+      "gamma": 0.0003493097933554557,
+      "rho": -0.15657174587249756,
+      "w_norm": 0.20217598974704742,
+      "n_landmarks": 300,
+      "latent_dim": 128,
+      "n_test_sequences": 213138,
+      "latent_mean": 0.19198942184448242,
+      "latent_std": 4.651076793670654,
+      "dead_dims": 0,
+      "median_kernel": 0.37499314546585083,
+      "typical_kernel": 0.144503698700572,
+      "effective_rank_95": 207,
+      "condition_number": 1365.440185546875,
+      "n_outliers_test": 0,
+      "outlier_rate": 0.0,
+      "rec_dissim_corr": -0.5003082417014229,
+      "tau": -0.0012727075815200926,
+      "n_train_scores": 57153,
+      "pca_var_1": 0.09852343052625656,
+      "pca_var_2": 0.07735220342874527
+    },
+    "pnn": {
+      "mu_mean": -0.00034915763535536826,
+      "mu_std": 0.0007737183477729559,
+      "sigma_mean": 0.0003275188209954649,
+      "sigma_std": 8.80187944858335e-05,
+      "sigma_min": 8.576515392633155e-05,
+      "alpha_mean": -0.6807647943496704,
+      "alpha_std": 0.15695960819721222,
+      "nll_mean": -4.3436126708984375,
+      "nll_p99": 23.025850296020508,
+      "n_predictions": 213138,
+      "n_gains_positive": 9,
+      "gains_pct_positive": 0.045,
+      "gains_mean": -71.6475853747428
+    },
+    "prae": {
+      "n_train_samples": 15079,
+      "mu_mean": 0.5023449063301086,
+      "mu_std": 0.00042264690273441374,
+      "mu_min": 0.4970364272594452,
+      "mu_max": 0.5032476186752319,
+      "mu_median": 0.5023835301399231,
+      "n_anomalies": 0,
+      "pct_anomalies": 0.0,
+      "err_in_mean": null,
+      "err_out_mean": null,
+      "err_ratio": null,
+      "test_score_mean": 436.23419189453125,
+      "test_score_p99": 1047.4991455078125
+    }
+  }
+}

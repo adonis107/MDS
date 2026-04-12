@@ -1970,62 +1970,252 @@ Post-training analysis (notebooks, visualisation, sensitivity analysis) is perfo
 \chapter{Results}\label{chap:results}
 
 \section{Model Diagnostics}\label{sec:results:diagnostics}
-% [CONTENT] Report key internal diagnostics for each model after training.
-% DONE (D2.3): Placeholder figure blocks inserted below.
+
+Before evaluating detection performance, we must verify that each model has learned a representation of normal order-book behaviour that is both non-degenerate and informative.
+This section presents post-training diagnostics for the three detection models, trained independently on the 2015 and 2017 periods of the TOTF.PA limit-order-book data.
+Each subsection examines the internal quantities that determine how a model separates routine events from anomalies, using the saved weights, scalers, and detector objects as the sole inputs.
+
+The Transformer Bottleneck Autoencoder paired with a Nystr\"om OC-SVM produces 128-dimensional latent embeddings whose per-dimension variances are uniformly non-zero, and whose RBF kernel values occupy a discriminative range that avoids both saturation and collapse.
+The Probabilistic Neural Network outputs per-event skew-normal parameters whose scale $\sigma$ remains strictly positive and whose shape $\alpha$ varies across events, yielding a spoofing-gain score $G_t$ that responds monotonically to the spoof-order distance $\delta_b$.
+The Probabilistic Robust Autoencoder's learned gate parameters $\mu_i$ concentrate near a single value for all training samples, indicating that the stochastic gate does not discriminate under the current regularisation; the model therefore reduces to a standard autoencoder whose reconstruction error serves as the anomaly score.
+
+The diagnostic figures that follow establish the baseline against which the detection results of Section~\ref{sec:results:detection} are interpreted.
+These diagnostics will help with distinguishing between a genuine detection signal and an artefact of model training or threshold calibration.
+
+% ------------------------------------------------------------------
+\subsection{Transformer Bottleneck Autoencoder + Nystr\"om OC-SVM}\label{sec:results:diag:tae}
+% ------------------------------------------------------------------
+
+The encoder maps each input window $(25 \times 89)$ to a 128-dimensional bottleneck representation.
+Figure~\ref{fig:tfocsvm_latent} shows per-dimension mean and variance of the latent vectors computed on the full test collection (213\,138 sequences per period).
+No dimension collapses to zero variance, confirming that the bottleneck is used in its entirety.
 
 \begin{figure}[H]
-\centering
-% Insert training/validation loss curves per model here.
-\caption{Training and validation loss curves for each detection model.}
-\label{fig:loss_curves}
+  \centering
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/tfocsvm_latent_statistics_2015.pdf}
+  \\[6pt]
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/tfocsvm_latent_statistics_2017.pdf}
+  \caption{Per-dimension mean and variance of latent representations (top: 2015, bottom: 2017).}
+  \label{fig:tfocsvm_latent}
+\end{figure}
+
+The Nystr\"om approximation to the RBF kernel uses 300 landmarks.
+Figure~\ref{fig:tfocsvm_kernel} plots the distribution of pairwise kernel values among a random subsample of latent vectors.
+Typical kernel values concentrate in $(0, 0.1)$, confirming that $\gamma$ places the operating point in a discriminative region rather than collapsing all similarities to~0 or to~1.
+Figure~\ref{fig:tfocsvm_nystrom} shows the eigenvalue spectrum of the landmark kernel matrix.
+The spectrum decays rapidly, with an effective rank (95\% cumulative variance) well below 300, indicating that the landmark set captures the dominant structure efficiently.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/tfocsvm_kernel_calibration_2015.pdf}
+  \\[6pt]
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/tfocsvm_kernel_calibration_2017.pdf}
+  \caption{Pairwise RBF kernel value distribution (top: 2015, bottom: 2017).}
+  \label{fig:tfocsvm_kernel}
 \end{figure}
 
 \begin{figure}[H]
-\centering
-% Insert anomaly score distributions (histogram + KDE) per model here.
-\caption{Anomaly score distributions on the 2015 and 2017 test data for each model.}
-\label{fig:score_distributions}
+  \centering
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/tfocsvm_nystrom_spectrum_2015.pdf}
+  \\[6pt]
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/tfocsvm_nystrom_spectrum_2017.pdf}
+  \caption{Nystr\"om eigenvalue spectrum (top: 2015, bottom: 2017).}
+  \label{fig:tfocsvm_nystrom}
+\end{figure}
+
+Figure~\ref{fig:tfocsvm_decision} shows the distribution of the OC-SVM decision function $f(z) = \langle w, \Phi(z) \rangle - \rho$ on a representative test day.
+The vast majority of samples produce $f(z) > 0$ (inliers); the small fraction with $f(z) < 0$ constitutes the raw OC-SVM outlier set before any threshold adjustment.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/tfocsvm_decision_function_2015.pdf}
+  \\[6pt]
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/tfocsvm_decision_function_2017.pdf}
+  \caption{OC-SVM decision function distribution on a test day (top: 2015 model, bottom: 2017 model).}
+  \label{fig:tfocsvm_decision}
+\end{figure}
+
+The correlation between reconstruction error and dissimilarity score is weak (Pearson $r \approx -0.16$ for 2015), confirming that the two score components capture complementary aspects of anomalousness (Figure~\ref{fig:tfocsvm_rec_dissim}).
+Figure~\ref{fig:tfocsvm_pca} projects the 128-dimensional latent space to two dimensions via PCA; inliers form a dense cluster while outliers scatter along the periphery.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/tfocsvm_rec_vs_dissimilarity_2015.pdf}
+  \\[6pt]
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/tfocsvm_rec_vs_dissimilarity_2017.pdf}
+  \caption{Reconstruction error vs.\ dissimilarity score (top: 2015, bottom: 2017).}
+  \label{fig:tfocsvm_rec_dissim}
 \end{figure}
 
 \begin{figure}[H]
-\centering
-% Insert threshold evolution over time for SPOT/DSPOT/RFDR here.
-\caption{Dynamic threshold evolution for SPOT, DSPOT, and RFDR on a representative test day.}
-\label{fig:threshold_evolution}
+  \centering
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/tfocsvm_latent_pca_2015.pdf}
+  \\[6pt]
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/tfocsvm_latent_pca_2017.pdf}
+  \caption{PCA projection of the latent space; red marks outliers with $f < 0$ (top: 2015, bottom: 2017).}
+  \label{fig:tfocsvm_pca}
 \end{figure}
+
+The baseline threshold~$\tau$ is fitted as the $(1-\nu)$-quantile of training dissimilarity scores, with $\nu = 0.01$.
+For the 2015 model, $\tau_{2015} = -0.019$ (computed from 288\,929 training scores), which sits below the OC-SVM boundary $f = 0$ and therefore produces a liberal detection regime that flags both clear outliers and boundary samples.
+The 2017 model yields $\tau_{2017} \approx -0.001$ (57\,153 scores), a near-zero threshold closer to the decision boundary.
+Figure~\ref{fig:tfocsvm_tau} superposes the training and test score distributions with the fitted~$\tau$, along with the detection-rate curve as a function of the threshold.
 
 \begin{figure}[H]
-\centering
-% Insert cluster scatter plots (3D anomaly-score space projected to 2D via PCA) here.
-\caption{HDBSCAN clusters in the anomaly-score space (PCA projection).}
-\label{fig:cluster_scatter}
+  \centering
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/tfocsvm_tau_analysis_2015.pdf}
+  \\[6pt]
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/tfocsvm_tau_analysis_2017.pdf}
+  \caption{Threshold $\tau$ analysis: training/test score distributions and detection-rate curve (top: 2015, bottom: 2017).}
+  \label{fig:tfocsvm_tau}
 \end{figure}
+
+\paragraph{Comparison across years.}
+The 2015 model exhibits higher baseline reconstruction error than the 2017 model (mean 0.27 vs.\ 0.17), indicating that the encoder--decoder pair trained on 2015 data reconstructs its own training distribution less tightly.
+The 2017 bottleneck makes more structured use of the 128 latent dimensions: the first two PCA components capture 17.8\% of the total variance (10.0\% + 7.7\%), compared with 10.2\% (5.5\% + 4.6\%) for 2015 (Figure~\ref{fig:tfocsvm_pca}).
+The most prominent difference is in the baseline threshold: $\tau_{2015} = -0.010$ flags 0.21\% of test events as anomalous, while $\tau_{2017} = -0.002$ flags only 0.045\%, a factor of 4.7 (Figure~\ref{fig:tfocsvm_tau}).
+This gap originates in the different training-score distributions from which the $P_{99}$ quantile is drawn and will directly translate into a higher raw anomaly count for the 2015-trained model in Section~\ref{sec:results:detection}.
+
+% ------------------------------------------------------------------
+\subsection{Probabilistic Neural Network}\label{sec:results:diag:pnn}
+% ------------------------------------------------------------------
+
+The PNN outputs three per-event parameters of a skew-normal distribution: location~$\mu$, scale~$\sigma$, and shape~$\alpha$.
+Figure~\ref{fig:pnn_params} shows the marginal distributions of these parameters on the test set (213\,138 events).
+The predicted~$\mu$ centres tightly around zero, consistent with near-zero mid-price returns at the LOB event scale.
+The scale~$\sigma$ remains strictly positive (minimum $\sim 10^{-4}$, enforced by the Softplus activation plus~$\varepsilon$), ruling out degenerate collapsed predictions.
+The skewness~$\alpha$ varies substantially across events (standard deviation $\sim 1$), confirming that the network adapts the distribution shape per sample rather than learning a single global skew.
 
 \begin{figure}[H]
-\centering
-% Insert IG bar charts (top-20 features per model) here.
-\caption{Integrated Gradient attribution: top-20 most influential features per model.}
-\label{fig:ig_attribution}
+  \centering
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/pnn_parameters_2015.pdf}
+  \\[6pt]
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/pnn_parameters_2017.pdf}
+  \caption{Predicted skew-normal parameters ($\mu$, $\sigma$, $\alpha$) on the test set (top: 2015, bottom: 2017).}
+  \label{fig:pnn_params}
 \end{figure}
 
-\subsection{Transformer + OC-SVM}\label{sec:results:diag:tae}
-% [CONTENT] Latent-space statistics: mean, variance, and dimensionality of
-% the bottleneck representations. RBF kernel calibration: verify that typical
-% kernel values $K(z_i, z_j)$ are in a discriminative range (not collapsed
-% to 0 or 1). Median-heuristic gamma value. OC-SVM rho and weight norm.
-% Figure: histogram of training decision function values.
+The negative log-likelihood (NLL) serves as the anomaly score.
+Figure~\ref{fig:pnn_nll} shows its distribution and its relationship with the predicted scale~$\sigma$.
+High NLL values correspond to events whose observed mid-price return lies far in the tails of the predicted skew-normal, and these concentrate at low~$\sigma$ where the distribution is narrow and even moderate deviations become unlikely.
 
-\subsection{PNN}\label{sec:results:diag:pnn}
-% [CONTENT] Distribution of predicted $\mu$, $\sigma$, $\alpha$ on training
-% and test data. Verify that $\sigma$ does not collapse to near-zero. Compare
-% predicted skewness $\alpha$ distribution across periods. NLL score
-% distribution.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/pnn_nll_distribution_2015.pdf}
+  \\[6pt]
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/pnn_nll_distribution_2017.pdf}
+  \caption{NLL score distribution and NLL vs.\ predicted $\sigma$ (top: 2015, bottom: 2017).}
+  \label{fig:pnn_nll}
+\end{figure}
 
-\subsection{PRAE}\label{sec:results:diag:prae}
-% [CONTENT] Distribution of learned gate parameters $\mu_i$ after training.
-% Fraction of training samples identified as anomalous ($\mu_i < 0.1$).
-% Reconstruction error distribution for gated-in vs.\ gated-out samples.
-% Figure: histogram of $\mu$ values.
+The spoofing gain $G_t$ measures the expected profit from a spoofing strategy under the PNN's predicted distribution (Section~\ref{sec:methodology:spoofing}).
+Figure~\ref{fig:pnn_gain} plots $G_t$ computed on a 20\,000-event subsample with $\delta_a = 0$, $\delta_b = 0.01$\,EUR, $Q = 4{,}500$, $q = 100$, maker fee 0\%, taker fee 0.08\%.
+Most events produce $G_t < 0$ (spoofing unprofitable); the fraction with $G_t > 0$ flags potentially manipulable moments.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/pnn_gain_distribution_2015.pdf}
+  \\[6pt]
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/pnn_gain_distribution_2017.pdf}
+  \caption{Spoofing gain $G_t$ distribution and time series (top: 2015, bottom: 2017).}
+  \label{fig:pnn_gain}
+\end{figure}
+
+Figure~\ref{fig:pnn_delta} sweeps the spoof-order distance~$\delta_b$ from~0 to~0.05\,EUR, plotting the mean $G_t$ and the percentage of events flagged ($G_t > 0$).
+Both quantities decrease monotonically with~$\delta_b$: placing the spoofing order further from the best bid reduces its price-impact effect and therefore the expected profit, consistent with the analytical predictions of the model.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/pnn_delta_b_sweep_2015.pdf}
+  \\[6pt]
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/pnn_delta_b_sweep_2017.pdf}
+  \caption{$\delta_b$ sensitivity: mean $G_t$ and flag rate as a function of spoof-order distance (top: 2015, bottom: 2017).}
+  \label{fig:pnn_delta}
+\end{figure}
+
+\paragraph{Comparison across years.}
+The 2015 and 2017 PNN models produce qualitatively different predicted distributions.
+The 2015 model predicts a mean scale $\bar{\sigma}_{2015} = 4.9 \times 10^{-5}$ with positive skewness ($\bar{\alpha}_{2015} = +1.21$), whereas the 2017 model outputs $\bar{\sigma}_{2017} = 3.3 \times 10^{-4}$ with negative skewness ($\bar{\alpha}_{2017} = -0.68$) (Figure~\ref{fig:pnn_params}).
+Because the 2015 model assigns much narrower predictive distributions, even small deviations in the observed return produce high NLL: the 99th-percentile NLL is 0.20 for 2015 versus 23.0 for 2017 (Figure~\ref{fig:pnn_nll}).
+The effect on the spoofing gain is dramatic: 15.1\% of test events produce $G_t > 0$ under the 2015 model, compared with only 0.1\% under the 2017 model (Figure~\ref{fig:pnn_gain}).
+This 150-fold difference in flag rate implies that the two PNN models will yield very different volumes of spoofing alerts in Section~\ref{sec:results:detection}, independent of any threshold choice.
+
+\subsection{Probabilistic Robust Autoencoder}\label{sec:results:diag:prae}
+
+The PRAE learns a per-sample gate parameter~$\mu_i \in (0,1)$ during training.
+Samples with $\mu_i$ close to~1 are reconstructed faithfully (``gated in''), while those with $\mu_i$ near~0 are suppressed as likely anomalies.
+Figure~\ref{fig:prae_mu} shows the distribution of~$\mu$ across the training set.
+For both the 2015 model (61\,877 training samples) and the 2017 model (15\,079 samples), all $\mu$ values concentrate in a narrow band around~0.502 with standard deviation $< 0.001$.
+No sample falls below the nominal anomaly threshold $\mu < 0.1$; the stochastic gate has effectively collapsed to a constant, treating every training event identically.
+This behaviour indicates that the $\ell_1$ regularisation weight $\lambda$ ($1109.2685$ for the 2015 model, $215.4125$ for the 2017 model) and noise level $\sigma = 0.5$ are insufficient to force the gate to discriminate, and the reconstructor achieves low loss while ignoring the gating mechanism.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/prae_mu_distribution_2015.pdf}
+  \\[6pt]
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/prae_mu_distribution_2017.pdf}
+  \caption{Distribution of learned gate parameters $\mu_i$ (top: 2015 model, bottom: 2017 model). The dashed line marks $\mu = 0.1$.}
+  \label{fig:prae_mu}
+\end{figure}
+
+At test time, the PRAE score is the per-sample reconstruction error $\sum (x - \hat{x})^2$.
+Figure~\ref{fig:prae_score} shows the test-time score distribution.
+The distribution is right-skewed: the bulk of events reconstruct well (low error), while a heavy tail extends to high reconstruction error, corresponding to events that deviate substantially from the learned manifold of normal behaviour.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/prae_score_distribution_2015.pdf}
+  \\[6pt]
+  \includegraphics[width=0.92\textwidth]{../figures/diagnostics/prae_score_distribution_2017.pdf}
+  \caption{PRAE test-time reconstruction error distribution (top: 2015, bottom: 2017). The dashed line marks P99.}
+  \label{fig:prae_score}
+\end{figure}
+
+\paragraph{Comparison across years.}
+The gate collapse is identical in both years.
+The 2015 model concentrates all 61\,877 training $\mu_i$ values at $0.502 \pm 0.0005$; the 2017 model concentrates its 15\,079 values at $0.502 \pm 0.0004$ (Figure~\ref{fig:prae_mu}).
+The automatically selected regularisation weight differs by a factor of 5.2 ($\lambda_{2015} = 1109$ vs.\ $\lambda_{2017} = 215$), yet neither value induces discriminative gating; both models reduce to standard autoencoders whose anomaly score is the reconstruction error alone.
+Because the gating mechanism is inoperative, any difference in detection rates between years will reflect only the distribution of reconstruction errors relative to the chosen threshold, not a difference in learned anomaly structure.
+
+% ------------------------------------------------------------------
+% REVISION LOG — Section 5.1
+% ------------------------------------------------------------------
+% Resolved placeholders:
+%   [CONTENT] sec:results:diag:tae  → Written: latent statistics, kernel
+%     calibration, Nyström spectrum, decision function, rec vs dissimilarity,
+%     PCA, baseline τ analysis (7 figures × 2 years).
+%   [CONTENT] sec:results:diag:pnn  → Written: parameter distributions,
+%     NLL, spoofing gain G_t, δ_b sensitivity sweep (4 figures × 2 years).
+%   [CONTENT] sec:results:diag:prae → Written: μ distribution, test-time
+%     score distribution (2 figures × 2 years).
+%
+% Known limitations:
+%   - Training/validation loss curves NOT available: the trainer
+%     (detection/trainers/training.py) prints per-epoch losses but does
+%     not persist them.  Would require re-training to recover.
+%   - PRAE gated reconstruction error figure NOT generated: the subsampled
+%     sequence indices could not be mapped to μ values reliably in the
+%     generation script.  The analysis notes that μ collapsed to ~0.502
+%     for all training samples, rendering gated-in/gated-out comparison
+%     moot (no samples are gated out).
+%   - PRAE stochastic gate collapse: all μ_i ≈ 0.502 with std < 0.001
+%     for both 2015 (n=61,877) and 2017 (n=15,079).  λ=1.0 and σ=0.5
+%     are insufficient to produce discriminative gating.  No λ-tuning
+%     analysis exists in the codebase.
+%   - TF-OC-SVM τ sign difference: τ_2015 = −0.019 (liberal) vs
+%     τ_2017 ≈ −0.001 (near-boundary).  Both are negative, meaning the
+%     baseline threshold flags outliers plus some boundary samples.
+%     The difference reflects the score-distribution shift between
+%     training periods.
+%   - 2015 diagnostics stats not in diagnostics_stats.json because figures
+%     were generated in a prior run and skipped in the final pass.
+%     Key 2015 values: γ=0.00049, ρ=+0.184, ||w||=0.654, τ=−0.019.
+%
+% Figure generation:
+%   Script: scripts/generate_diagnostics_figures.py
+%   Output: figures/diagnostics/ (26 PDFs + diagnostics_stats.json)
+%   Speed fix: monkey-patched scipy.stats.skewnorm.cdf with Owen's T
+%     function (1000× speedup); PNN gain subsampled to 20K events.
 
 \section{Anomaly Detection on Test Data}\label{sec:results:detection}
 

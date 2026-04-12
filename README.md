@@ -1,139 +1,226 @@
 # Probabilistic Detection of Market Manipulation
 
-A machine learning pipeline for detecting spoofing, layering, and quote stuffing in Limit Order Book (LOB) data using probabilistic and interpretable deep learning models, backed by Extreme Value Theory for adaptive thresholding. Developed by Adonis Jamal and Jean-Vincent Martini for the *Mathematics and Data Science* major at CentraleSupélec under the supervision of Professor Damien Challet.
+![Status](https://img.shields.io/badge/status-research%20prototype-0A7E8C)
+![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)
+![Platform](https://img.shields.io/badge/platform-linux%20%7C%20windows-5A5A5A)
+![License](https://img.shields.io/badge/license-unspecified-lightgrey)
 
-## Key Features
+This project implements a full pipeline for anomaly detection in Limit Order Book (LOB) data, with a focus on market-manipulation patterns such as spoofing-like behavior.
 
-- **Three complementary detection models**
-  - **Transformer + One-Class SVM** — Autoencoder learns a latent representation of normal order flow; OC-SVM flags outliers in latent space.
-  - **Probabilistic Neural Network (PNN)** — Predicts price movements as a skewed Gaussian distribution; high negative log-likelihood signals anomalies.
-  - **Probabilistic Robust Autoencoder (PRAE)** — Transformer autoencoder with learnable per-sample gates that separate normal from anomalous training data.
+It combines:
+- rich microstructure feature engineering,
+- probabilistic/deep models,
+- adaptive thresholding,
+- and post-hoc analysis for interpretability and clustering.
 
-- **Rich feature engineering** — Imbalance, dynamics, elasticity, volatility, weighted imbalance (Tao et al.), event flow / rapidity, Hawkes self-exciting order flows, and multi-level Order Flow Imbalance (OFI).
+## Table of Contents
 
-- **Adaptive thresholding** — Peak-Over-Threshold (POT), Streaming POT (SPOT), Drift-aware Streaming POT (DSPOT), and Rolling False Discovery Rate (RFDR) via Extreme Value Theory and Benjamini-Hochberg correction.
+- [What This Project Does](#what-this-project-does)
+- [Why This Project Is Useful](#why-this-project-is-useful)
+- [Repository Structure](#repository-structure)
+- [How to Get Started](#how-to-get-started)
+- [Usage Examples](#usage-examples)
+- [Where to Get Help](#where-to-get-help)
+- [Maintainers and Contributing](#maintainers-and-contributing)
 
-- **Interpretability** — Integrated Gradients and Grouped Occlusion sensitivity analysis to attribute anomaly scores to individual features and order-book levels.
+## What This Project Does
 
-- **Spoofing gain estimation** — Economic model (Fabre & Challet) that quantifies the expected profitability of a spoofing strategy given PNN predictions.
+The repository provides end-to-end tooling to:
+1. preprocess raw daily LOB files into feature-rich parquet datasets,
+2. train three anomaly-detection model families,
+3. evaluate on held-out, distal, and out-of-sample periods,
+4. run threshold sweeps, anomaly clustering, and diagnostics.
 
-## Project Structure
+### Implemented model families
 
-```
-├── scripts/
-│   ├── run.py              # CLI entry point – runs the full pipeline
-│   ├── preprocess.py       # Raw CSV → cleaned Parquet with engineered features
-│   ├── train.py            # Day-by-day training loop (Slurm)
-│   ├── test.py             # Evaluation on held-out data (Slurm)
-│   ├── test_inference_cache.py   # Cache model outputs per day
-│   ├── test_threshold_sweep.py   # Threshold sweep from cache
-│   ├── submit_training.sh        # Slurm job scripts
-│   ├── submit_testing.sh
-│   ├── submit_test_inference_cache.sh
-│   ├── submit_test_threshold_sweep.sh
-│   ├── queue_resume_chain.sh     # Chain dependent Slurm jobs
-│   └── setup_env.sh              # Conda environment setup
+- **Transformer + OC-SVM (`transformer_ocsvm`)**
+  - Learns latent representations of normal market behavior and detects outliers in latent space.
+- **Probabilistic Neural Network (`pnn`)**
+  - Predicts skew-normal distribution parameters and uses spoofing-gain logic for anomaly signaling.
+- **Probabilistic Robust Autoencoder (`prae`)**
+  - Uses stochastic sample gating to improve robustness to contamination in training data.
+
+## Why This Project Is Useful
+
+- **Multi-view detection**: combines representation learning, probabilistic forecasting, and robust reconstruction.
+- **Domain-aware features**: includes imbalance, dynamics, volatility, event-flow, Hawkes-style memory, and OFI features.
+- **Adaptive thresholding**: includes POT/SPOT/DSPOT/RFDR methods for changing score distributions.
+- **Operationally ready for HPC**: includes SLURM scripts for train/test/post-hoc orchestration.
+- **Research workflow support**: includes notebooks, figure-generation scripts, and deliverables used in project reporting.
+
+## Repository Structure
+
+```text
+.
 ├── config/
-│   └── default.yaml        # All pipeline hyperparameters
-├── detection/
-│   ├── pipeline.py         # Orchestrates data → features → model → threshold → evaluation
-│   ├── base.py             # Abstract base classes (BaseDeepModel, BaseDetector, BaseThreshold)
-│   ├── data/               # Data loading, sequence creation, scalers
-│   ├── features/           # Feature engineering modules (dynamics, hawkes, ofi, …)
-│   ├── models/             # Transformer, PNN, PRAE, OC-SVM, Hybrid
-│   ├── sensitivity/        # Integrated Gradients, Grouped Occlusion
-│   ├── spoofing/           # Spoofing gain calculator
-│   ├── thresholds/         # POT, SPOT, DSPOT, RFDR
-│   └── trainers/           # Training loop & EarlyStopping callback
-└── notebooks/              # Step-by-step analysis (training, model diagnostics, testing, …)
+│   └── default.yaml                 # Pipeline configuration defaults
+├── detection/                       # Core package (data/features/models/thresholds/trainers)
+├── scripts/
+│   ├── preprocess.py                # Raw LOB -> processed parquet + engineered features
+│   ├── train.py                     # Sequential day-by-day model training
+│   ├── test.py                      # Evaluation on held-out and OOS periods
+│   ├── anomaly_clustering.py        # Cluster detected anomalies
+│   ├── test_inference_cache.py      # Cache inference outputs
+│   ├── test_threshold_sweep.py      # Compare threshold methods from cached scores
+│   ├── run.py                       # Config-driven single-entry pipeline runner
+│   ├── setup_env.sh                 # One-time Ruche setup helper
+│   └── slurm/                       # HPC job scripts (train/test/posthoc/submit_all)
+├── notebooks/                       # Exploratory and analysis notebooks
+├── data/
+│   ├── raw/
+│   └── processed/
+├── results/                         # Trained artifacts and evaluation outputs
+└── deliverables/                    # Report and presentation sources
 ```
 
-## Getting Started
+## How to Get Started
 
-### Prerequisites
-
-- Python ≥ 3.9
-- CUDA-capable GPU recommended (the pipeline auto-detects and falls back to CPU)
-
-### Installation
+### 1. Clone and create an environment
 
 ```bash
-git clone https://github.com/adonis107/MDS-PDMM.git
-cd MDS-PDMM
+git clone <your-repo-url>
+cd MDS-Market_Manipulation
 
 python -m venv .venv
-source .venv/bin/activate  
+# Linux/macOS:
+source .venv/bin/activate
+# Windows PowerShell:
+# .\.venv\Scripts\Activate.ps1
 
 pip install -r requirements.txt
 ```
 
-> **Note:** PyTorch is installed with CUDA 12.1 support by default (see the `--extra-index-url` in [requirements.txt](requirements.txt)). Adjust for your CUDA version or remove the flag for CPU-only.
+Notes:
+- `requirements.txt` installs PyTorch from the CUDA 12.1 index by default.
+- If you are CPU-only, adjust the PyTorch install line accordingly.
 
-### Data Preparation
+### 2. Prepare input data
 
-Place raw daily LOB CSV files under `data/raw/TOTF.PA-book/`, then run the preprocessing script:
+Expected raw input folder:
+- `data/raw/TOTF.PA-book/`
+
+Run preprocessing:
 
 ```bash
 python scripts/preprocess.py
 ```
 
-This produces cleaned Parquet files in `data/processed/TOTF.PA-book/` with all engineered features.
+Output:
+- processed parquet files under `data/processed/TOTF.PA-book/`
 
-### Running the Pipeline
+### 3. Train models
 
 ```bash
-# Run with default configuration
-python scripts/run.py
+# Default runs all model types for year from env (default set in script)
+python scripts/train.py
 
-# Use a custom config
-python scripts/run.py -c config/default.yaml
-
-# Override model type and training epochs
-python scripts/run.py --model pnn --epochs 100
-
-# Change device and threshold method
-python scripts/run.py --device cpu --threshold dspot
+# Example: train only PNN for 2015
+# Linux/macOS:
+MDS_MODELS=pnn MDS_YEAR=2015 python scripts/train.py
+# Windows PowerShell:
+# $env:MDS_MODELS='pnn'; $env:MDS_YEAR='2015'; python scripts/train.py
 ```
 
-All pipeline settings (data paths, feature sets, model architecture, training, thresholding, evaluation) are controlled via [config/default.yaml](config/default.yaml) and can be overridden from the CLI.
+### 4. Evaluate models
 
-### Configuration
+```bash
+# Example: evaluate models trained for 2015
+# Linux/macOS:
+MDS_YEAR=2015 python scripts/test.py
+# Windows PowerShell:
+# $env:MDS_YEAR='2015'; python scripts/test.py
+```
 
-The YAML config is organized into sections:
+Primary outputs are written to:
+- `results/<YEAR>/test_output/`
 
-| Section          | Key options                                                       |
-|------------------|-------------------------------------------------------------------|
-| `data`           | File path, row limit, market hours                                |
-| `features`       | Feature sets to compute (`base`, `tao`, `poutre`, `hawkes`, `ofi`), window size |
-| `preprocessing`  | Scaler (`minmax` / `standard` / `quantile`), sequence length, train/val split |
-| `model`          | Model type (`transformer_ocsvm` / `pnn` / `prae`) and architecture hyperparameters |
-| `training`       | Epochs, learning rate, batch size, early-stopping patience, device |
-| `threshold`      | Method (`pot` / `spot` / `dspot` / `rfdr`), risk level, window sizes |
-| `evaluation`     | F-beta parameter for scoring                                      |
+### 5. Optional: config-driven run entrypoint
 
-## Notebooks
+You can run the generic pipeline entrypoint:
 
-Interactive notebooks provide step-by-step analysis and visualization:
+```bash
+python scripts/run.py -c config/default.yaml
+```
 
-| # | Notebook | Description |
-|---|----------|-------------|
-| 1 | Training | Sequential day-by-day training across 24 daily snapshots |
-| 2a–c | Model Analysis | Diagnostics for Transformer+OC-SVM, PNN, and PRAE |
-| 3 | Testing | Evaluation on held-out data with anomaly classification |
-| 4 | Sensitivity Analysis | Feature attribution via Integrated Gradients and Grouped Occlusion |
-| 5 | Threshold Analysis | Comparison of POT, DSPOT, RFDR and percentile-based methods |
-| 6 | Anomaly Clustering | Clustering of detected anomalies to identify patterns and potential spoofing events |
-| 7 | Jump Analysis | Analysis of feature jumps around detected anomalies to understand market impact and potential spoofing signatures |
+Common overrides:
 
-## Models at a Glance
+```bash
+python scripts/run.py --model pnn --epochs 100 --device cpu --threshold dspot
+```
 
-| Model | Approach | Anomaly Score |
-|-------|----------|---------------|
-| **Transformer + OC-SVM** | Bottleneck autoencoder → latent vectors → One-Class SVM with Nyström-approximated RBF kernel | Negated OC-SVM decision function |
-| **PNN** | Single hidden layer → skewed Gaussian parameters (μ, σ, α) | Negative log-likelihood |
-| **PRAE** | Transformer AE with learnable stochastic gates per training sample | Reconstruction error |
+## Usage Examples
 
-## Authors
+### SLURM workflow (Ruche/HPC)
 
-- **Adonis Jamal** — CentraleSupélec
-- **Jean-Vincent Martini** — CentraleSupélec
+One-time environment bootstrap:
+
+```bash
+bash scripts/setup_env.sh
+```
+
+Submit full dependency graph (train -> test -> posthoc -> cleanup):
+
+```bash
+bash scripts/slurm/submit_all.sh
+```
+
+Manual per-stage examples:
+
+```bash
+# Train one model-year pair
+MDS_MODEL=transformer_ocsvm MDS_YEAR=2015 sbatch scripts/slurm/train.sh
+
+# Test a year
+MDS_YEAR=2015 sbatch scripts/slurm/test.sh
+
+# Post-hoc analysis
+sbatch scripts/slurm/posthoc.sh
+```
+
+### Verification scripts
+
+For quick sanity/integration checks:
+
+```bash
+python scripts/verify_dissimilarity.py
+python scripts/verify_layer2.py
+python scripts/verify_layer3.py
+```
+
+## Where to Get Help
+
+If you are onboarding to this repository, the most practical first path is:
+1. run preprocessing on a small subset,
+2. run one model training (`pnn`) end-to-end,
+3. run `scripts/test.py` for one training year.
+
+## Maintainers and Contributing
+
+### Maintainers
+
+Current project maintainers:
+- Adonis Jamal
+- Jean Martini
+
+Academic supervision:
+- Damien Challet (Supervisor)
+- Lionel Gabet (Tutor)
+
+### Contributing
+
+Contributions are welcome through issues and pull requests.
+
+Recommended lightweight process:
+1. Open an issue describing the bug/feature or experimental change.
+2. Create a focused branch.
+3. Add or update validation scripts/notebooks when relevant.
+4. Submit a pull request with clear reproduction steps and expected outputs.
+
+For substantial methodological changes, include:
+- affected scripts/modules,
+- parameter changes,
+- and a short summary of result impact.
+
+---
+
+If you use this repository in academic work, cite the corresponding report/presentation in [deliverables](deliverables).

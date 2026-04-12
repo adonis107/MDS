@@ -9,12 +9,13 @@
 *.zip
 
 # Folders
-files/
-archive/
-results/
-__pycache__/
 .venv/
+__pycache__/
+archive/
+files/
+results/
 test_output/
+logs/
 
 # Notes
 *.md

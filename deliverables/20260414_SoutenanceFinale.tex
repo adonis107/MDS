@@ -1,6 +1,6 @@
 \documentclass{beamer}
 
-% --- Metropolis theme (modern, minimal) ---
+% Metropolis theme (modern, minimal)
 \usetheme{metropolis}
 \usepackage{appendixnumberbeamer}
 
@@ -10,6 +10,7 @@
 \usepackage{amssymb}
 \usepackage{booktabs}
 \usepackage{hyperref}
+\pdfstringdefDisableCommands{\def\translate#1{#1}}
 \usepackage{animate}
 \usepackage{caption}
 \usepackage{graphicx}
@@ -19,7 +20,7 @@
 \usetikzlibrary{arrows.meta, positioning, shapes.geometric, shadows}
 \usepackage{tcolorbox}
 \tcbuselibrary{skins, breakable}
-\captionsetup[figure]{font=tiny}
+\captionsetup{font=tiny}
 \graphicspath{{../figures/}}
 
 \usepackage[
@@ -29,7 +30,7 @@
 ]{biblatex}
 \addbibresource{bibliography.bib}
 
-% --- Colour palette ---
+% Colour palette
 \definecolor{CSred}{RGB}{160,32,60}
 \definecolor{CSgrey}{RGB}{136,121,150}
 \definecolor{CSlight}{RGB}{245,240,248}
@@ -37,7 +38,7 @@
 \definecolor{metrobg}{RGB}{255,255,255}
 \definecolor{greenok}{RGB}{34,120,60}
 
-% --- Metropolis overrides ---
+% Metropolis overrides
 \setbeamercolor{normal text}{fg=black!85, bg=metrobg}
 \setbeamercolor{frametitle}{bg=CSred, fg=white}
 \setbeamercolor{title separator}{fg=CSred}
@@ -50,14 +51,42 @@
 \metroset{progressbar=frametitle, sectionpage=none, numbering=fraction}
 \setbeamerfont{frametitle}{series=\bfseries, size=\normalsize}
 
-% --- Auto-insert outline frame at each section transition ---
-\AtBeginSection[]{
-  \begin{frame}{Outline}
-    \tableofcontents[currentsection]
-  \end{frame}
+% tcolorbox styles
+\tcbset{
+  keybox/.style={
+    colback=CSlight, colframe=CSred, fonttitle=\bfseries\small,
+    boxrule=0.8pt, arc=3pt, left=5pt, right=5pt, top=4pt, bottom=4pt
+  },
+  warnbox/.style={
+    colback=orange!7, colframe=alertorange, fonttitle=\bfseries\small,
+    boxrule=0.8pt, arc=3pt, left=5pt, right=5pt, top=4pt, bottom=4pt
+  },
+  stressbox/.style={
+    colback=CSlight, colframe=CSgrey, fonttitle=\bfseries\footnotesize,
+    boxrule=0.8pt, arc=4pt, left=4pt, right=4pt, top=3pt, bottom=3pt
+  },
+  resultbox/.style={
+    colback=green!5, colframe=greenok, fonttitle=\bfseries\small,
+    boxrule=0.8pt, arc=3pt, left=5pt, right=5pt, top=4pt, bottom=4pt
+  }
 }
 
-% --- tcolorbox styles ---
+% Appendix toggle (suppress TOC slides in the appendix)
+\newif\ifinappendix
+\inappendixfalse
+\let\origappendix\appendix
+\renewcommand{\appendix}{\origappendix\inappendixtrue}
+
+% Auto-insert outline frame at each section transition
+\AtBeginSection[]{%
+  \ifinappendix\else
+  \begin{frame}{Outline}
+        \tableofcontents[currentsection,hideothersubsections]
+  \end{frame}
+  \fi
+}
+
+% tcolorbox styles
 \tcbset{
   keybox/.style={
     colback=CSlight, colframe=CSred, fonttitle=\bfseries\small,
@@ -73,18 +102,12 @@
   }
 }
 
-% --- Take-home (plain text, no box) ---
-\newcommand{\takehome}[1]{%
-  \vfill
-  {\small\itshape #1}
-}
-
 \setbeamertemplate{note page}[plain]
 
 \title{Probabilistic Detection of Market Manipulation}
 \subtitle{MDS Project - Final Presentation}
-\author{Adonis~Jamal \and Jean Martini\\Supervisor: Damien Challet\\Tutor: Lionel Gabet}
-\institute{CentraleSupélec -- MICS Laboratory}
+\author[Adonis Jamal \and Jean Martini]{Adonis~Jamal \and Jean Martini\\Supervisor: Damien Challet\\Tutor: Lionel Gabet}
+\institute{CentraleSupélec, MICS Laboratory}
 \date{April 14, 2026}
 
 \titlegraphic{%
@@ -105,7 +128,7 @@
 % SLIDE 2: OUTLINE
 % ======================================================================
 \begin{frame}{Outline}
-    \tableofcontents
+    \tableofcontents[hideallsubsections]
 \end{frame}
 
 
@@ -119,20 +142,20 @@
 % SLIDE 3: LOB AND SPOOFING
 % ======================================================================
 \begin{frame}{Spoofing in the Limit Order Book}
-    \begin{block}{Mechanism}
+    \begin{tcolorbox}[keybox, title=Mechanism]
         \begin{itemize}
             \item Non-bona fide orders placed to create false supply/demand pressure
             \item Mid-price shifts towards the manipulator's genuine order
             \item Spoof orders cancelled once the genuine order is filled
         \end{itemize}
-    \end{block}
-    \begin{alertblock}{Detection Challenges}
-        \begin{enumerate}
+    \end{tcolorbox}
+    \begin{tcolorbox}[warnbox, title=Detection Challenges]
+        \begin{itemize}
             \item \textbf{Contamination:} training data contains unknown manipulations
             \item \textbf{No ground truth:} no ``manipulated / not manipulated'' labels
             \item \textbf{Non-stationarity:} market regime changes (volatility, liquidity)
-        \end{enumerate}
-    \end{alertblock}
+        \end{itemize}
+    \end{tcolorbox}
     \note{Spoofing is prohibited under EU MAR and the US Dodd-Frank Act, yet detection remains difficult because the same order flow patterns arise from legitimate trading strategies. The absence of labels forces an unsupervised, score-based approach.}
 \end{frame}
 
@@ -140,14 +163,12 @@
 % SLIDE 4: WHY PROBABILISTIC, SCORE-BASED DETECTION
 % ======================================================================
 \begin{frame}{Why Probabilistic, Score-Based Detection}
-    Binary classification is unsuitable for three reasons:
-    \begin{enumerate}
+    \begin{itemize}
         \item No ground-truth labels exist at the order level in equity markets
         \item Manipulation is a spectrum of intent, not a discrete category
         \item A continuous score allows ranking events by severity and calibrating thresholds to a desired false discovery rate
-    \end{enumerate}
+    \end{itemize}
 
-    \vspace{0.3cm}
     \textbf{Research questions:}
     \begin{itemize}
         \item Can unsupervised models detect anomalous order flow without labels?
@@ -155,7 +176,6 @@
         \item Can spoofing profitability be estimated directly from model predictions?
         \item Do detection patterns remain stable across years?
     \end{itemize}
-    \note{The probabilistic formulation enables both ranking-based surveillance and economic interpretability through the spoofing gain framework of Fabre and Challet.}
 \end{frame}
 
 
@@ -232,83 +252,77 @@
     Volatility         & 6  & Rolling $\sigma$ ($W{=}50,100$), price range, $\Delta t$ \\
     Event flow         & 18 & Cancel/trade size \& rapidity \cite{poutre_2024} \\
     Hawkes memory      & 38 & Spatial + temporal decay, $4\eta \times 3\beta$ \cite{fabre_2025} \\
-    OFI                & 5  & Multi-level order flow imbalance (L1--L5) \\
+    OFI                & 5  & Multi-level order flow imbalance (L1 to L5) \\
     \midrule
     \textbf{Total}     & \textbf{89} & ${\sim}7{\times}$ larger than Poutr{\'e} et al.\ (${\sim}13$) \\
     \bottomrule
     \end{tabular}
     \end{table}
     \begin{itemize}
-        \item Preprocessing: replace inf/NaN, trim 3{,}000 warmup rows, clip at $[0.1\%, 99.9\%]$ quantiles
-        \item Scaling: Empirical Box-Cox + z-score, fitted on day~1 only
+        \item Preprocess: inf/NaN fix, 3,000-row warmup trim. Clip features: $[0.1\%, 99.9\%]$ quantiles
+        \item Scale: Empirical Box-Cox then z-score, fitted on day~1 only
     \end{itemize}
     \note{The feature library integrates contributions from three reference papers. Hawkes memory features capture self-exciting order flow patterns with spatial decay, absent from Poutr\'e et al.'s Level-1 feature set.}
 \end{frame}
 
 % ======================================================================
-% SLIDE 7: MODEL 1 --- TRANSFORMER + OC-SVM
+% SLIDE 7: MODEL 1: TRANSFORMER + OC-SVM
 % ======================================================================
 \begin{frame}{Model 1: Transformer Bottleneck AE + OC-SVM \cite{poutre_2024}}
-    \begin{block}{Architecture}
+    \begin{tcolorbox}[keybox, title=Why this model]
         \begin{itemize}
-            \item Bottleneck Transformer AE: input $(25 \times 89)$ $\to$ 128-dim latent $\to$ reconstruction
-            \item 6 layers, 8 heads, $d_{\text{ff}}{=}512$; trained with MSE loss (Adam, $\eta{=}10^{-4}$, patience 20)
+            \item Self-attention captures long-range LOB dependencies (price levels, event sequences)
+            \item Bottleneck: 2,225 dimensions to 128 latent features
+            \item Latent OC-SVM beats raw reconstruction error \cite{poutre_2024}. Normal data and anomalies more separable in latent space.
+            \item \textbf{Limitation:} signed distance, uncalibrated probability
         \end{itemize}
-    \end{block}
-    \begin{block}{OC-SVM in Latent Space}
-        \begin{itemize}
-            \item Nystr{\"o}m approximation ($m{=}300$ landmarks), RBF $\gamma$ via median heuristic
-            \item SGD training (500 epochs, $\nu{=}0.01$), fitted once after all training days
-        \end{itemize}
-    \end{block}
-    \begin{block}{Anomaly Score}
-        Negated OC-SVM decision function $d(\mathbf{z})$; higher $\to$ more anomalous
-    \end{block}
-    \note{The Transformer captures complex multivariate dependencies across 25-event windows. The OC-SVM boundary in the 128-dim bottleneck space provides a density-aware decision function that complements the reconstruction error.}
+    \end{tcolorbox}
+    \begin{tcolorbox}[keybox, title=Inference]
+        AE trains end-to-end for reconstruction. At inference, decoder discarded and encoder outputs latent vectors for OC-SVM. Dissimilarity score $d_t$ is flagged when $d_t \geq \tau$.
+    \end{tcolorbox}
 \end{frame}
 
 % ======================================================================
-% SLIDE 8: MODEL 2 --- PNN
+% SLIDE 8: MODEL 2: PNN
 % ======================================================================
 \begin{frame}{Model 2: Probabilistic Neural Network \cite{fabre_2025}}
-    \begin{block}{Architecture}
+    \begin{tcolorbox}[keybox, title=Why this model]
         \begin{itemize}
-            \item Single hidden layer ($d_h{=}64$, ReLU), Markovian: last time step only
-            \item Output: skew-normal parameters $(\mu, \sigma, \alpha)$ for $\Delta p_{\text{mid}}$
+            \item Predicts full conditional next-move distribution
+            \item Outputs likelihood score and spoofing gain
+            \item Gain gives direct economic interpretability: Expected profit
+            \item \textbf{Limitation:} strategy-model dependence can miss patterns
         \end{itemize}
-    \end{block}
-    \begin{block}{Training Objective}
-        Skew-normal NLL: $\mathcal{L} = -\frac{1}{|\mathcal{B}|}\sum_i \ln\bigl(\frac{2}{\sigma_i}\,\varphi(z_i)\,\Phi(\alpha_i z_i) + 10^{-10}\bigr)$
-    \end{block}
-    \begin{block}{Anomaly Score}
-        Spoofing gain $G_t = \mathbb{E}[C_{\text{normal}}] - \mathbb{E}[C_{\text{spoof}}]$; flagged if $G_t > 0$
-    \end{block}
-    \note{The PNN is the only model with a direct economic interpretation. The spoofing gain quantifies the expected profit from a hypothetical spoofing strategy, using parameters $Q{=}4500$, $q{=}100$, $\delta_b{=}0.01$, maker fee 0, taker fee 0.0008 (Euronext Paris large-cap schedule).}
+    \end{tcolorbox}
+    \begin{tcolorbox}[keybox, title=Anomaly Score]
+        Spoofing gain $G_t = \mathbb{E}[C_{\text{normal}}] - \mathbb{E}[C_{\text{spoof}}]$; flagged if $G_t > 0$ (spoofing profitable). Thresholding is implicit: the economic framework supplies it.
+    \end{tcolorbox}
+    \note{Architecture details (hidden dimension, skew-normal parameterisation, loss function) are in the appendix. The PNN is Markovian: it uses only the last time step of each window. Spoofing gain parameters: $Q{=}4500$, $q{=}100$, $\delta_b{=}0.01$, maker fee 0, taker fee 0.0008 (Euronext Paris large-cap schedule).}
 \end{frame}
 
 % ======================================================================
-% SLIDE 9: MODEL 3 --- PRAE
+% SLIDE 9: MODEL 3: PRAE
 % ======================================================================
 \begin{frame}{Model 3: Probabilistic Robust Autoencoder \cite{lindenbaum2022prae}}
-    \begin{block}{Architecture}
+    \begin{tcolorbox}[keybox, title=Why this model]
         \begin{itemize}
-            \item Same Transformer backbone as TF-OCSVM
-            \item Learnable per-sample gate $g_i = \min\bigl(\max(\mu_i + \varepsilon_i,\; 0),\; 1\bigr)$, \quad $\varepsilon_i \sim \mathcal{N}(0,\, 0.5^2)$
+            \item Per-sample gate downweights suspected anomalies
+            \item Robustness under unknown contamination rates
+            \item \textbf{Limitation:} reduces to standard autoencoder if gates collapse
         \end{itemize}
-    \end{block}
-    \begin{block}{Training Objective}
-        $\mathcal{L}_1 = \mathbb{E}\bigl(\sum_i g_i \|x_i - \hat{x}_i\|^2 - \lambda \|\mathbf{g}\|_1\bigr)$; $\lambda$ chosen via grid search on day~1
-    \end{block}
-    \begin{block}{Anomaly Score}
-        Reconstruction error $s_t = \|S_t - \hat{S}_t\|^2$; thresholded by RFDR ($w{=}500$, $\alpha{=}0.05$)
-    \end{block}
-    \note{The gating mechanism is designed to downweight contaminated training samples. In practice, the gate parameters collapsed to the initialisation value on both periods, so the PRAE effectively operated as a standard Transformer AE.}
+    \end{tcolorbox}
+    \begin{tcolorbox}[keybox, title=Anomaly Score]
+        Reconstruction error $s_t = \|S_t - \hat{S}_t\|^2$; higher implies stronger anomaly
+    \end{tcolorbox}
+    \note{Architecture details (gate parameterisation, loss function, $\lambda$ tuning) are in the appendix. The PRAE shares the same Transformer backbone as TF-OCSVM. The gating mechanism was designed to downweight contaminated training samples, but in practice the $\ell_1$ regularisation weight and noise level were insufficient to force the gate to discriminate.}
 \end{frame}
 
 % ======================================================================
 % SLIDE 10: THRESHOLDING METHODS
 % ======================================================================
 \begin{frame}{Anomaly Thresholding: Four Label-Free Methods}
+    Two models (TF-OC-SVM, PRAE) produce continuous scores requiring explicit threshold selection.
+    \vspace{0.15cm}
     \begin{table}[h]
     \centering
     \footnotesize
@@ -324,8 +338,8 @@
     \end{tabular}
     \end{table}
     \begin{itemize}
-        \item TF-OCSVM also uses a baseline $\tau_0 = Q_{1-\nu}$ (percentile of training dissimilarity scores)
-        \item PNN uses an economic threshold: $G_t > 0$ (spoofing profitable)
+        \item TF-OCSVM baseline: $\tau_0 = Q_{1-\nu}$ (vs. $F_4$ score \cite{poutre_2024})
+        \item PNN threshold: $G_t > 0$
     \end{itemize}
     \note{DSPOT degenerates on PNN bounded scores (flags 99.8\%). RFDR and POT are the most stable label-free methods across all three score streams.}
 \end{frame}
@@ -334,29 +348,25 @@
 % SLIDE 11: EXPERIMENTAL SETUP
 % ======================================================================
 \begin{frame}{Experimental Setup}
-    \begin{columns}[T]
-    \begin{column}{0.55\textwidth}
-    \begin{itemize}
-        \item \textbf{Instrument:} TOTF.PA (TotalEnergies, Euronext Paris)
-        \item \textbf{Training periods:} 2015 (13 days), 2017 (61 days)
-        \item \textbf{Test splits per year:}
-            \begin{itemize}
-                \item $\mathcal{T}_A$: 9 proximate days
-                \item $\mathcal{T}_B$: 3 distal days
-            \end{itemize}
-        \item \textbf{Out-of-sample:} 2010 (261 days), cross-year
-        \item \textbf{Total scored:} ${\sim}109$M (2015) / ${\sim}100$M (2017) snapshots
-    \end{itemize}
-    \end{column}
-    \begin{column}{0.42\textwidth}
-    \begin{itemize}
-        \item Training on first hour only (09:00--10:00), alternating 5-min blocks
-        \item Testing on full session (09:00--17:30)
-        \item 4 intraday periods defined
-        \item Compute: NVIDIA A100-40GB (Ruche HPC)
-    \end{itemize}
-    \end{column}
-    \end{columns}
+    \begin{table}[h]
+    \centering
+    \footnotesize
+    \begin{tabular}{ll}
+    \toprule
+    \textbf{Parameter} & \textbf{Value} \\
+    \midrule
+    Instrument         & TOTF.PA (TotalEnergies, Euronext Paris) \\
+    Training period 1  & 2015 (13 days) \\
+    Training period 2  & 2017 (61 days) \\
+    Proximate test ($\mathcal{T}_A$) & 9 days per year \\
+    Distal test ($\mathcal{T}_B$)    & 3 days per year \\
+    Out-of-sample      & 2010 (261 days), cross-year \\
+    Training window    & First hour only (09:00 to 10:00), alternating 5-min blocks \\
+    Test window        & Full session (09:00 to 17:30) \\
+    Intraday periods   & 4 (first hour, rest of morning, afternoon, US open) \\
+    \bottomrule
+    \end{tabular}
+    \end{table}
     \note{The asymmetry between training (first hour) and testing (full session) is deliberate: it tests whether patterns learned in the opening hour generalise to the rest of the trading day.}
 \end{frame}
 
@@ -383,13 +393,14 @@
         {\tiny 2017: first 2 PCs capture 17.8\% variance}
     \end{column}
     \end{columns}
-    \vspace{0.2cm}
+    
     \begin{itemize}
-        \item $\tau_{2015} = -0.019$ (flags 0.21\%); $\tau_{2017} \approx -0.001$ (flags 0.045\%): 4.7$\times$ difference
-        \item Reconstruction error and dissimilarity are near-orthogonal: Pearson $r \approx -0.16$ (2015)
+        \item Dense inlier cluster, peripheral outliers: tighter boundary
+        \item 2017 latent structure stronger: 17.8\% vs 10.2\%
+        \item Unbounded score: percentile thresholds not equivalent
+        \item Reconstruction and dissimilarity nearly orthogonal ($r \approx -0.16$): complementary information
     \end{itemize}
-    \takehome{The 128-dim bottleneck captures year-specific structure; baseline $\tau$ varies 4.7$\times$ between 2015 and 2017.}
-    \note{The negative correlation between reconstruction error and OC-SVM dissimilarity confirms that the two scoring mechanisms capture complementary aspects of the data distribution.}
+    \note{No dimension collapses to zero variance and the bottleneck capacity is fully utilised. Pairwise kernel values concentrate in $(0, 0.1)$, confirming discriminative $\gamma$ calibration. $\tau_{2015} = -0.019$ (flags 0.21\%); $\tau_{2017} \approx -0.001$ (flags 0.045\%).}
 \end{frame}
 
 % ======================================================================
@@ -410,12 +421,12 @@
     \end{columns}
     \vspace{0.2cm}
     \begin{itemize}
-        \item Skewness sign reversal: positive (2015) vs.\ negative (2017)
-        \item Flag rate ($G_t > 0$): 15.1\% (2015) vs.\ 0.1\% (2017)
-        \item 99th-percentile NLL: 0.20 (2015) vs.\ 23.0 (2017)
+        \item 2015 $\sigma$ narrower by factor 6.7: small price deviations appear extreme
+        \item Narrow $\sigma$: inflated 2015 anomaly rate
+        \item Positive gain alignment on 2017 calibration
+        \item Cross-year rates confounded by distributional shift
     \end{itemize}
-    \takehome{PNN calibration is year-specific: the 150-fold flag-rate difference reflects sensitivity to the volatility regime.}
-    \note{The narrow $\sigma$ learned on 2015 data implies that the PNN is overconfident, producing positive spoofing gains even for typical price moves. The broader $\sigma$ on 2017 data results in a more conservative flag rate.}
+    \note{The narrow $\sigma$ learned on 2015 data implies overconfidence: the PNN produces positive spoofing gains even for typical price moves. The broader $\sigma$ on 2017 data results in a more conservative flag rate. Skewness sign reversal: positive (2015) vs.\ negative (2017). 99th-percentile NLL: 0.20 (2015) vs.\ 23.0 (2017).}
 \end{frame}
 
 % ======================================================================
@@ -431,17 +442,17 @@
     \begin{column}{0.48\textwidth}
         \centering
         \includegraphics[width=\linewidth]{../figures/diagnostics/prae_score_distribution_2015.pdf}\\
-        {\tiny 2015: mean reconstruction error = 426.4}
+        {\tiny 2015: reconstruction error distribution}
     \end{column}
     \end{columns}
     \vspace{0.2cm}
     \begin{itemize}
-        \item Gate parameters $\mu_i \in [0.501, 0.503]$: no sample rejected ($\mu < 0.1$)
-        \item $\lambda_{2015} = 1109.3$, $\lambda_{2017} = 215.4$ (5.2$\times$ ratio)
-        \item Effective behaviour: standard Transformer autoencoder
+        \item Gate collapse: $\mu_i \approx 0.502$ both periods ($\text{std} < 0.001$)
+        \item No rejection; behaves as standard autoencoder
+        \item Lower 2017 $\lambda$: stronger outlier pressure, requires larger deviations to flag
+        \item Compression yields more conservative 2017 scores
     \end{itemize}
-    \takehome{PRAE gates collapsed to a constant on both periods; the model operates as a standard autoencoder.}
-    \note{The large $\lambda$ values relative to the reconstruction scale push all gates to 1, preventing the outlier-rejection mechanism from activating. The PRAE's robustness to contamination is therefore not utilised on this dataset.}
+    \note{Both models reduce to standard autoencoders. The $\ell_1$ regularisation weight and noise level $\sigma = 0.5$ are insufficient to force the gate to discriminate. Gate collapse is identical in both years: 2015 concentrates all 61{,}877 training $\mu_i$ at $0.502 \pm 0.0005$; 2017 concentrates 15{,}079 values at $0.502 \pm 0.0004$.}
 \end{frame}
 
 
@@ -468,12 +479,12 @@
     \end{columns}
     \vspace{0.15cm}
     \begin{itemize}
-        \item PRAE US-open rate exceeds morning by ${\sim}20\%$ (2017) to ${\sim}70\%$ (2015)
-        \item 2017 TF-OCSVM: \textbf{zero anomalies} during US open
-        \item 2015 PNN: 7.7\% flag rate during US open (highest across all models)
+        \item 2015 inter-model spread: PNN high, PRAE mid. 2017 TF-OCSVM anomaly rate near zero
+        \item Models respond to different signals, not a common definition of anomaly
+        \item US open elevation across years and models
+        \item Intraday pattern stable across $\mathcal{T}_A$, $\mathcal{T}_B$
     \end{itemize}
-    \takehome{All models flag the US open (15:30--17:30) as the most anomalous period, consistent with cross-market information flow.}
-    \note{The US open coincides with the opening of American equity markets, which introduces exogenous volatility into European limit order books through cross-listed instruments and index arbitrage.}
+    \note{Full anomaly rates: TF-OCSVM 2.0 to 2.8\% (2015) vs 0.00 to 0.03\% (2017), PNN 6.1 to 7.7\% vs 0.06 to 0.08\%, PRAE 2.2 to 3.7\% vs 2.1 to 2.5\%. The large gap for TF-OCSVM and PNN reflects a liberal $\tau_{2015}$ and narrow predicted $\sigma_{2015}$. The 2017 TF-OCSVM produces zero anomalies during the US open, suggesting its boundary is more conservatively calibrated for that regime.}
 \end{frame}
 
 % ======================================================================
@@ -494,37 +505,38 @@
     \end{columns}
     \vspace{0.15cm}
     \begin{itemize}
-        \item TF-OCSVM 2015: spans $[-0.42, 0.13]$, 0.96\% cross zero
-        \item TF-OCSVM 2017: concentrated $[-0.12, 0.02]$, 0.025\% cross zero
-        \item PRAE mean reconstruction: 426.4 (2015) vs.\ 443.7 (2017)
+        \item 2017 TF-OCSVM range three-times narrower (longer training)
+        \item Absolute thresholds non-transferable across years
+        \item 2015 TF-OCSVM distribution has more borderline mass (2017 cleaner separation between normal and anomalous)
+        \item PRAE right-skew remains stable across years
     \end{itemize}
-    \takehome{Score scales differ by 1--2 orders of magnitude between years; absolute thresholds are not transferable.}
-    \note{The compression of the 2017 TF-OCSVM score range reflects the longer training period (61 vs.\ 13 days), which produces a tighter OC-SVM boundary.}
+    \begin{tcolorbox}[keybox, title=]
+        Score scales differ by 1 to 2 orders; thresholds non-transferable.
+    \end{tcolorbox}
+    \note{TF-OCSVM 2015 spans $[-0.42, 0.13]$, 0.96\% cross zero; 2017 concentrated $[-0.12, 0.02]$, 0.025\% cross zero. PRAE mean reconstruction: 426.4 (2015) vs.\ 443.7 (2017). The compression of the 2017 score range is consistent with the OC-SVM learning a more representative normal boundary from more training data.}
 \end{frame}
 
 % ======================================================================
 % SLIDE 17: MODEL AGREEMENT (CONSENSUS)
 % ======================================================================
 \begin{frame}{Model Agreement: Consensus Detection}
-    \centering
-    \includegraphics[width=0.75\linewidth]{../figures/results/consensus_agreement.pdf}
-    \vspace{0.15cm}
-    \begin{table}[h]
-    \centering
-    \footnotesize
-    \begin{tabular}{rrrr}
-    \toprule
-    \textbf{Models agreeing} & \textbf{2015 count} & \textbf{2015 \%} & \textbf{2017 \%} \\
-    \midrule
-    0 & 97.7M & 89.56 & 97.74 \\
-    1 & 10.5M & 9.59 & 2.25 \\
-    2 & 875K & 0.80 & 0.005 \\
-    3 & 46{,}609 & 0.04 & 0.000 \\
-    \bottomrule
-    \end{tabular}
-    \end{table}
-    \takehome{Full consensus ($3/3$): 46{,}609 windows in 2015 (0.04\%), zero in 2017; single-model flags dominate.}
-    \note{The near-zero consensus rate indicates that each model captures a different facet of the anomaly landscape. The 2017 absence of full consensus is driven by the 150-fold reduction in PNN flag rate.}
+    \begin{columns}[T]
+    \begin{column}{0.50\textwidth}
+        \textbf{Consensus set:} 46{,}609 windows flagged by all three models in 2015 (0.04\% of total), \textbf{zero} in 2017.
+        \vspace{0.1cm}
+        \begin{itemize}
+            \item 2017 two-model agreements mostly PRAE plus one
+            \item Majority vote ($\geq 2$ models): 2015 huge, 2017 minimal
+            \item Near-zero consensus: no shared anomaly definition
+        \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{../figures/results/consensus_agreement_2015.pdf}\\[4pt]
+        \includegraphics[width=\linewidth]{../figures/results/consensus_agreement_2017.pdf}
+    \end{column}
+    \end{columns}
+    \note{Under the 2015 model: 89.56\% unanimously normal, 9.59\% flagged by one, 0.80\% by two, 0.04\% by all three. Under 2017: 97.74\% normal, 2.25\% by one, 0.005\% by two, 0\% by all three. The 2017 absence of full consensus is driven by the 150-fold reduction in PNN flag rate.}
 \end{frame}
 
 % ======================================================================
@@ -533,15 +545,16 @@
 \begin{frame}{Threshold Method Comparison}
     \centering
     \includegraphics[width=0.75\linewidth]{../figures/results/fig_5_3_jaccard_heatmaps.pdf}
-    \vspace{0.15cm}
+    \vspace{0.1cm}
+
+    Mean pairwise method agreement (CV of $\tau$): 0.67 (TF-OC-SVM), degenerate (PNN, DSPOT flags 99.8\%), 0.40 (PRAE).
+    \vspace{0.1cm}
     \begin{itemize}
-        \item DSPOT degenerates on PNN scores: flags 99.8\% of all windows
-        \item PRAE SPOT/DSPOT Jaccard $> 0.90$; PRAE POT vs.\ adaptive $\approx 0.35$
-        \item Conservative intersection (all 4 methods): ${\sim}0.31\%$ for PRAE
-        \item Coefficient of variation of $\tau$: 0.40 (PRAE) vs.\ 0.67 (TF-OCSVM)
+        \item PRAE inter-method agreement highest, robust to threshold choice
+        \item TF-OCSVM sensitive to threshold method
+        \item DSPOT invalid on bounded PNN scores
     \end{itemize}
-    \takehome{RFDR and POT are the most stable label-free methods; DSPOT is unsuitable for PNN's bounded scores.}
-    \note{The PRAE score stream produces the most consistent threshold estimates across the four methods, confirming its reconstruction-based scores are better-behaved for EVT tail fitting than the OC-SVM decision function.}
+    \note{Explicit thresholds: TF-OCSVM POT $\tau = 0.044$ (0.1\%), SPOT 0.018 (0.4\%), DSPOT 0.001 (0.9\%), RFDR 0.035 (0.2\%); PNN DSPOT drift correction drives $\tau$ to $-0.005$, flagging 99.8\%; PRAE POT $\tau = 3371$ (0.3\%), RFDR 1659 (0.5\%), SPOT/DSPOT ${\sim}1500$ (0.7\%). RFDR and POT are the most stable label-free methods across all three score streams.}
 \end{frame}
 
 
@@ -574,8 +587,10 @@
     \bottomrule
     \end{tabular}
     \end{table}
-    \takehome{Only PRAE on 2017 shows a significant proximity effect ($p = 0.014$); no systematic inflation detected otherwise.}
-    \note{The absence of a consistent proximity effect across models and years supports the validity of the test split design. The PRAE 2017 result is marginal and may reflect the longer training period rather than memorisation.}
+    \begin{tcolorbox}[keybox, title=]
+        Only 2017 PRAE shows a significant proximity effect.
+    \end{tcolorbox}
+    \note{The absence of a consistent proximity effect across models and years supports the validity of the test split design. The PRAE 2017 result is marginal and may reflect the longer training period rather than memorisation. Independent verification: under all four threshold methods (POT, SPOT, DSPOT, RFDR), PRAE shows $\mathcal{T}_A \gg \mathcal{T}_B$ (rates 2.3 to 2.5\% vs 0.01 to 0.04\%, 50 to 150$\times$), confirming this is a distributional property, not a threshold artefact.}
 \end{frame}
 
 
@@ -592,11 +607,13 @@
     \includegraphics[width=0.78\linewidth]{../figures/results/fig_5_5_gain_distribution.pdf}
     \vspace{0.15cm}
     \begin{itemize}
-        \item 2015: 90.6\% of windows have $G$ exactly zero (degenerate); max positive gain $= 2.1 \times 10^{-9}$
-        \item 2017: heavy left tail, median $-79.6$, 1st percentile $-843.7$; 0.07\% with $G > 0$
+        \item 2015 gains degenerate: 90.6\% exactly zero
+        \item 2017 left tail heavy, 0.07\% positive gains
     \end{itemize}
-    \takehome{Under the PNN's predicted distribution, only 0.07\% of 2017 windows yield $G > 0$. Whether this reflects genuine unprofitability, model underestimation (narrow $\sigma$ in 2015, conservative calibration in 2017), or regulatory deterrence remains an open question.}
-    \note{The near-zero gains in 2015 reflect the narrow predicted $\sigma$, which makes the fill probabilities near-degenerate. The 2017 distribution is better calibrated and produces meaningful gain estimates. The low positive-gain rate should not be interpreted as evidence that spoofing does not occur on TOTF.PA---only that the PNN framework does not identify it as profitable under the assumed fee structure.}
+    \begin{tcolorbox}[keybox, title=]
+        2017 positive gains: 0.07\%; interpretation remains open (unprofitability, model limitations, regulatory deterrence).
+    \end{tcolorbox}
+    \note{The near-zero gains in 2015 reflect the narrow predicted $\sigma$, which makes the fill probabilities near-degenerate. The 2017 distribution is better calibrated and produces meaningful gain estimates. The low positive-gain rate should not be interpreted as evidence that spoofing does not occur on TOTF.PA, only that the PNN framework does not identify it as profitable under the assumed fee structure. The batch gain computation uses a single PNN forward pass (Level-2 data limitation); the counterfactual feature vector is not recomputed, yielding a conservative estimate that neglects the distributional shift induced by the spoof order in Hawkes features.}
 \end{frame}
 
 % ======================================================================
@@ -604,8 +621,7 @@
 % ======================================================================
 \begin{frame}{Gain-Score Alignment: Spearman Correlation}
     \centering
-    \includegraphics[width=0.78\linewidth]{../figures/results/fig_5_5_gain_vs_score.pdf}
-    \vspace{0.1cm}
+    \includegraphics[width=0.6\linewidth]{../figures/results/fig_5_5_gain_vs_score.pdf}
     \begin{table}[h]
     \centering
     \footnotesize
@@ -613,29 +629,38 @@
     \toprule
     \textbf{Model} & \textbf{Year} & $\rho_s$ & \textbf{Interpretation} \\
     \midrule
-    PNN      & both  & 1.000 & Tautological ($G$ is the PNN score) \\
-    TF-OCSVM & 2017  & 0.415 & Moderate positive: flags less-costly-to-spoof states \\
-    PRAE     & 2017  & $-0.143$ & Weak negative: flags less spoofable states \\
+    PNN      & both  & 1.000 & Tautological \\
+    TF-OCSVM & 2017  & 0.415 & Flags less-costly-to-spoof states \\
+    PRAE     & 2017  & $-0.143$ & Flags less spoofable states \\
     \bottomrule
     \end{tabular}
     \end{table}
-    \takehome{TF-OCSVM anomaly scores align positively with spoofing gain ($\rho_s = 0.415$ on 2017), an emergent property not built into the model.}
-    \note{The positive correlation for TF-OCSVM suggests that the latent representation captures book states that are structurally similar to those exploitable by spoofing, even though the model was trained only on reconstruction error.}
+    \begin{tcolorbox}[keybox, title=]
+        TF-OCSVM scores align with spoofing, an emergent property.
+    \end{tcolorbox}
+    \note{The positive correlation for TF-OCSVM suggests that the latent representation captures book states that are structurally similar to those exploitable by spoofing, even though the model was trained only on reconstruction error. Score-decile analysis: mean $G$ increases monotonically from D1 (lowest) to D10 (highest) for TF-OCSVM in 2017. For PRAE, the trend reverses. On 2015, both correlations are negligible ($|\rho_s| < 0.06$) because $G$ is effectively constant at zero.}
 \end{frame}
 
 % ======================================================================
 % SLIDE 22: FLAGGED VS NON-FLAGGED GAIN
 % ======================================================================
 \begin{frame}{Flagged vs.\ Non-Flagged Gain Distributions}
-    \centering
-    \includegraphics[width=0.78\linewidth]{../figures/results/fig_5_5_gain_flagged_kde.pdf}
-    \vspace{0.15cm}
-    \begin{itemize}
-        \item TF-OCSVM 2017: $\bar{G}_{\text{flag}} = -57.9$ vs.\ $\bar{G}_{\text{no-flag}} = -111.3$; MW $p < 10^{-300}$
-        \item PRAE 2017: $\bar{G}_{\text{flag}} = -123.8$ vs.\ $\bar{G}_{\text{no-flag}} = -111.0$; MW $p = 1.5 \times 10^{-149}$
-        \item PRAE flags \textbf{less spoofable} states; TF-OCSVM flags \textbf{more spoofable} states
-    \end{itemize}
-    \takehome{TF-OCSVM flagged windows have 48\% higher (less negative) gain than non-flagged; PRAE flags the opposite direction.}
+    \begin{columns}[T]
+    \begin{column}{0.46\textwidth}
+        \begin{itemize}
+            \item TF-OCSVM flags less-negative gain states
+            \item PRAE flags more-negative gain states
+            \item Opposite gain direction across models
+        \end{itemize}
+    \end{column}
+    \begin{column}{0.52\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{../figures/results/fig_5_5_gain_flagged_kde.pdf}
+    \end{column}
+    \end{columns}
+    \begin{tcolorbox}[keybox, title=]
+        TF-OCSVM flagged windows have 48\% higher (less negative) gain than non-flagged; PRAE flags the opposite direction.
+    \end{tcolorbox}
     \note{The divergent relationship between reconstruction-based anomalies (PRAE) and density-based anomalies (TF-OCSVM) with respect to spoofing gain confirms that the models capture fundamentally different aspects of the anomaly landscape.}
 \end{frame}
 
@@ -650,15 +675,26 @@
 % ======================================================================
 \begin{frame}{Cross-Model Feature Importance Heatmap}
     \centering
-    \includegraphics[width=0.82\linewidth]{../figures/results/fig_5_6_cross_model_heatmap.pdf}
+    \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{../figures/results/fig_5_6_cross_model_heatmap.pdf}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+        \centering
+        \includegraphics[width=0.8\linewidth]{../figures/results/fig_5_6_occlusion_tf_ocsvm.pdf}
+    \end{column}
+    \end{columns}
     \vspace{0.1cm}
     \begin{itemize}
-        \item Hawkes limit-order features: 75\% of PNN importance (2017), 46\% of PRAE (2017)
-        \item Cancellation features: top group for TF-OCSVM 2017
-        \item Trade-size features: 25\% of PNN importance (2015), 22\% of PRAE (2015)
+        \item Hawkes limit memory dominates PNN and PRAE
+        \item Cancellation and return groups lead TF-OCSVM
+        \item Trade-size importance strongest in 2015
     \end{itemize}
-    \takehome{Hawkes limit-order memory and cancellation rapidity are the top drivers across models, consistent with spoofing/layering signatures.}
-    \note{Methods: Integrated Gradients ($m{=}30$ steps) for PNN and PRAE, Grouped Occlusion for TF-OCSVM. Attribution computed on $n{=}150$ flagged windows per model per year.}
+    \begin{tcolorbox}[keybox, title=]
+        Top drivers across models: Hawkes limit-order memory and cancellation rapidity. Consistent with spoofing/layering signatures.
+    \end{tcolorbox}
+    \note{Methods: Integrated Gradients ($m{=}30$ steps) for PNN and PRAE, Grouped Occlusion for TF-OCSVM. Attribution computed on $n{=}150$ flagged windows per model per year. IG target: PNN $\to$ predicted scale $\sigma(\mathbf{x})$; PRAE $\to$ reconstruction error. Root-cause z-score analysis (independent of IG): TF-OCSVM top feature = Hawkes $M_{\text{bid}}$ ($\beta_{10}$) in 2015, $M_{\text{ask}}$ ($\beta_{1000}$) in 2017; PNN top = trade size (bid) in 2015, Hawkes $L_{\text{bid}}$ (short) in 2017.}
 \end{frame}
 
 % ======================================================================
@@ -666,15 +702,17 @@
 % ======================================================================
 \begin{frame}{PNN Feature Attribution: Consistent vs.\ Situational}
     \centering
-    \includegraphics[width=0.82\linewidth]{../figures/results/fig_5_6_ig_variance_pnn.pdf}
+    \includegraphics[width=0.7\linewidth]{../figures/results/fig_5_6_ig_variance_pnn.pdf}
     \vspace{0.15cm}
     \begin{itemize}
-        \item 2015: \texttt{abs\_velocity} (dynamics) \#1; trade size and event flow follow
-        \item 2017: all 10 top-ranked features are Hawkes limit-order kernels
-        \item High-variance features (situational): spread, OFI at L3--L5
-        \item Low-variance features (consistent): Hawkes $L_{\text{bid/ask}}$ (short half-life)
+        \item 2015 top feature: \texttt{abs\_velocity} dynamics
+        \item 2017 top-10: all Hawkes limit kernels
+        \item Situational features (high variance): spread, OFI deep levels
+        \item Consistent features (low variance): short half-life Hawkes limits
     \end{itemize}
-    \takehome{Hawkes limit-order features are consistently ranked highest; dynamics features are year-specific and situational.}
+    \begin{tcolorbox}[keybox, title=]
+        Hawkes limit-order features are consistently ranked highest; dynamics features are year-specific and situational.
+    \end{tcolorbox}
     \note{The year-specific shift from dynamics to Hawkes features reflects the change in volatility regime. On 2015 data (low $\sigma$), absolute velocity dominates because the PNN threshold is near-degenerate; on 2017 data, Hawkes features drive the calibrated gain calculation.}
 \end{frame}
 
@@ -682,25 +720,16 @@
 % SLIDE 25: CROSS-MODEL CONSENSUS FEATURES
 % ======================================================================
 \begin{frame}{Cross-Model Consensus: Top Feature Groups}
-    Feature groups ranking in the top 3 across all three models (2017):
-    \vspace{0.2cm}
-    \begin{enumerate}
-        \item \textbf{Hawkes limit-order memory} (spatial + temporal decay of new limit orders)
-            \begin{itemize}
-                \item Captures the placement distance and arrival rate of non-bona fide orders
-            \end{itemize}
-        \item \textbf{Cancellation features} (rapidity + size of cancellations at L1)
-            \begin{itemize}
-                \item High cancellation rapidity is a signature of quote stuffing and spoofing withdrawal
-            \end{itemize}
-        \item \textbf{Trade size and event flow} (L1 volume consumed by market orders)
-            \begin{itemize}
-                \item Captures the execution phase of the spoofing lifecycle
-            \end{itemize}
-    \end{enumerate}
-    \vspace{0.15cm}
-    These three groups map directly to the spoofing mechanism: placement $\to$ price shift $\to$ execution $\to$ cancellation.
-    \takehome{All three models converge on features that trace the full spoofing lifecycle: placement, execution, cancellation.}
+    Top groups across all three models (2017):
+    \begin{itemize}
+        \item Hawkes memory: placement intensity and distance
+        \item Cancellation rapidity and size: spoofing withdrawal and quote stuffing
+        \item Trade size and event flow: execution phase
+        \item Lifecycle mapping: placement, shift, execution, cancellation
+    \end{itemize}
+    \begin{tcolorbox}[keybox, title=]
+        All three models converge on features that trace the full spoofing lifecycle: placement, execution, cancellation.
+    \end{tcolorbox}
     \note{The alignment between independently trained models on the same discriminative features provides indirect validation that the detected anomalies share structural properties with known spoofing signatures.}
 \end{frame}
 
@@ -714,15 +743,22 @@
 % SLIDE 26: CLUSTER PROJECTIONS
 % ======================================================================
 \begin{frame}{HDBSCAN Cluster Projections}
-    \centering
-    \includegraphics[width=0.82\linewidth]{../figures/results/fig_5_7_cluster_pca.pdf}
-    \vspace{0.15cm}
-    \begin{itemize}
-        \item 2015: 1.34M anomalous windows $\to$ $k{=}2$ clusters; Silhouette = 0.495, Davies-Bouldin = 0.607
-        \item 2017: 83K anomalous windows $\to$ $k{=}2$ clusters; Silhouette = 0.771, Davies-Bouldin = 0.235
-        \item 2017 clusters are better separated (Silhouette $+57\%$ vs.\ 2015)
-    \end{itemize}
-    \takehome{HDBSCAN identifies two anomaly types in both years, with substantially better separation in 2017.}
+    \begin{columns}[T]
+    \begin{column}{0.46\textwidth}
+        \begin{itemize}
+            \item 2015 anomalies: 1.34M, two clusters
+            \item 2017 anomalies: 83K, two clusters
+            \item 2017 separation stronger: silhouette +57\%
+        \end{itemize}
+        \begin{tcolorbox}[keybox, title=]
+            HDBSCAN identifies two anomaly types in both years, with substantially better separation in 2017.
+        \end{tcolorbox}
+    \end{column}
+    \begin{column}{0.52\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{../figures/results/fig_5_7_cluster_pca.pdf}
+    \end{column}
+    \end{columns}
     \note{Input to HDBSCAN: the three normalised anomaly scores per window. The two-cluster solution emerges consistently across years, suggesting a fundamental dichotomy in the anomaly landscape.}
 \end{frame}
 
@@ -730,9 +766,6 @@
 % SLIDE 27: CLUSTER FEATURE PROFILES
 % ======================================================================
 \begin{frame}{Cluster Feature Group Profiles}
-    \centering
-    \includegraphics[width=0.82\linewidth]{../figures/results/fig_5_7_feature_group_profile.pdf}
-    \vspace{0.1cm}
     \begin{table}[h]
     \centering
     \footnotesize
@@ -747,8 +780,20 @@
     \bottomrule
     \end{tabular}
     \end{table}
-    \takehome{C0 = imbalance/reconstruction anomalies; C1 = volatility/boundary anomalies with larger spoofing cost.}
-    \note{The cluster-specific gain values suggest that C1 anomalies occur in market states where spoofing would be more costly, consistent with their association with legitimate volatility events.}
+
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \begin{tcolorbox}[keybox, title=]
+                C0 = imbalance / reconstruction anomalies; \\C1 = volatility / boundary anomalies with larger spoofing cost.
+            \end{tcolorbox}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \centering
+            \includegraphics[width=0.9\linewidth]{../figures/results/fig_5_7_feature_group_profile.pdf}
+        \end{column}
+    \end{columns}
+        
+    \note{Cluster-specific gain values suggest C1 anomalies occur in market states where spoofing would be more costly. Per-model detection rates: 2017 C0 = 99.4\% PRAE, 0\% OC-SVM; C1 = 100\% OC-SVM, 0\% PRAE (near-perfect model alignment). 2015 C0 = 42\% PNN + 51\% PRAE (joint activation); C1 = 97\% OC-SVM. Noise cluster in 2017 has extreme mean $G = -4{,}800.9$. The two-cluster solution emerges consistently but aligns with model identity rather than a continuum of anomaly severity.}
 \end{frame}
 
 
@@ -761,9 +806,6 @@
 % SLIDE 28: JUMP CO-OCCURRENCE
 % ======================================================================
 \begin{frame}{Anomaly-Jump Co-Occurrence Rates}
-    \centering
-    \includegraphics[width=0.82\linewidth]{../figures/results/fig_5_8_cooccurrence.pdf}
-    \vspace{0.1cm}
     \begin{table}[h]
     \centering
     \footnotesize
@@ -772,30 +814,52 @@
     \textbf{Year} & \textbf{Model} & \textbf{Rate} & \textbf{Base} & \textbf{Ratio} & $p$ \\
     \midrule
     2015 & TF-OCSVM & 16.10\% & 2.40\% & 6.7$\times$ & $< 5 \times 10^{-4}$ \\
+    2015 & PNN      & 0.93\%  & 2.40\% & 0.4$\times$ & 1.000 \\
     2015 & PRAE     & 4.39\%  & 2.40\% & 1.8$\times$ & $< 5 \times 10^{-4}$ \\
+    2017 & TF-OCSVM & 0.37\%  & 0.93\% & 0.4$\times$ & 1.000 \\
     2017 & PNN      & 17.09\% & 0.93\% & 18.4$\times$ & $< 5 \times 10^{-4}$ \\
     2017 & PRAE     & 11.39\% & 0.93\% & 12.3$\times$ & $< 5 \times 10^{-4}$ \\
     \bottomrule
     \end{tabular}
     \end{table}
-    \takehome{PRAE is the only model with significantly elevated jump co-occurrence in both years (1.8$\times$ and 12.3$\times$ base rate).}
-    \note{Jump defined as absolute log-return > 99.95th percentile; horizon $\Delta t = 100$ events. Permutation test with 2000 shuffles. The year-specific complementarity of TF-OCSVM and PNN underscores the value of the multi-model approach.}
+
+    \begin{columns}[T]
+        \begin{column}{0.55\textwidth}
+            \begin{tcolorbox}[keybox, title=]
+                Year-specific complementarity: TF-OCSVM detects jump-associated anomalies in 2015 but not 2017; PNN detects them in 2017 but not 2015. PRAE is the only model with elevated co-occurrence in both years.
+            \end{tcolorbox}
+        \end{column}
+        \begin{column}{0.44\textwidth}
+            \centering
+            \includegraphics[width=0.8\linewidth]{../figures/results/fig_5_8_cooccurrence.pdf}
+        \end{column}
+    \end{columns}
+
+    \note{Jump: absolute log-return $> 99.95$th percentile; horizon $\Delta t = 100$ events; permutation test with 2{,}000 shuffles. PNN in 2015 falls \emph{below} the base rate (0.93\% vs 2.40\%): its flags correspond to stable, non-jumping periods. TF-OCSVM in 2017 likewise falls below (0.37\% vs 0.93\%). Consensus set (2015 only, 7{,}044 windows): 3.65\% co-occurrence (1.5$\times$ base rate), diluted by anti-correlated PNN flags. No 2017 consensus exists.}
 \end{frame}
 
 % ======================================================================
 % SLIDE 29: EVENT STUDY
 % ======================================================================
 \begin{frame}{Event Study: Price Path Around Flagged Windows}
-    \centering
-    \includegraphics[width=0.82\linewidth]{../figures/results/fig_5_8_price_path.pdf}
-    \vspace{0.15cm}
-    \begin{itemize}
-        \item 2015 median lead time: 31 events (IQR: [9, 60]); 67{,}490 anomaly-jump pairs
-        \item 2017 median lead time: 6 events (IQR: [1, 19]); 6{,}712 pairs
-        \item Flagged windows precede jumps at above-chance rates
-    \end{itemize}
-    \takehome{Anomalies precede price jumps by a median of 6--31 events, consistent with the spoofing reversion mechanism.}
-    \note{The shorter lead time in 2017 may reflect a tighter OC-SVM boundary and more precise temporal localisation. The price path shape is consistent with the spoofing lifecycle: brief price displacement followed by partial reversion.}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \begin{itemize}
+                \item 2015 median lead time: 31 events
+                \item 2017 median lead time: 6 events
+                \item Flagged windows precede jumps above chance
+            \end{itemize}
+            \begin{tcolorbox}[keybox, title=]
+                Anomalies precede jumps by median 6 to 31 events.
+            \end{tcolorbox}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \centering
+            \includegraphics[width=0.9\linewidth]{../figures/results/fig_5_8_price_path.pdf}
+        \end{column}
+    \end{columns}
+
+    \note{The shorter lead time in 2017 may reflect a tighter OC-SVM boundary and more precise temporal localisation. The price path shape is consistent with the spoofing lifecycle: brief price displacement followed by partial reversion. At the aggregate level, the mean flagged price path is flat (buy and sell anomalies cancel), but the confidence band is wider than the non-flagged reference, confirming elevated local volatility around flagged windows.}
 \end{frame}
 
 
@@ -808,9 +872,6 @@
 % SLIDE 30: CROSS-YEAR ANOMALY RATES
 % ======================================================================
 \begin{frame}{Cross-Year Anomaly Rate Comparison}
-    \centering
-    \includegraphics[width=0.82\linewidth]{../figures/results/fig_5_9_anomaly_rate.pdf}
-    \vspace{0.1cm}
     \begin{table}[h]
     \centering
     \footnotesize
@@ -827,7 +888,19 @@
     \bottomrule
     \end{tabular}
     \end{table}
-    \takehome{PRAE is the most robust model: rate ratios 0.5$\times$--1.8$\times$. TF-OCSVM 2017 collapses entirely on 2015 data (0.00\%).}
+
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \begin{tcolorbox}[keybox, title=]
+                PRAE is the most robust model. TF-OCSVM 2017 collapses entirely on 2015 data.
+            \end{tcolorbox}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \centering
+            \includegraphics[width=1.1\linewidth]{../figures/results/fig_5_9_anomaly_rate.pdf}
+        \end{column}
+    \end{columns}
+
     \note{The PNN trained on 2015 inflates to 13.45\% on 2017 data because the narrow $\sigma$ produces positive spoofing gains even for moderately large price moves characteristic of the 2017 volatility regime.}
 \end{frame}
 
@@ -836,27 +909,36 @@
 % ======================================================================
 \begin{frame}{Cross-Year Detection Set Overlap}
     \centering
-    \includegraphics[width=0.82\linewidth]{../figures/results/fig_5_9_detection_overlap.pdf}
-    \vspace{0.1cm}
-    \begin{table}[h]
-    \centering
-    \footnotesize
-    \begin{tabular}{llr}
-    \toprule
-    \textbf{Train} & \textbf{Model} & \textbf{Jaccard $J$} \\
-    \midrule
-    2015 & PRAE     & 0.073 \\
-    2017 & PRAE     & 0.180 \\
-    both & TF-OCSVM & $\approx 0$ \\
-    both & PNN      & $\approx 0$ \\
-    \bottomrule
-    \end{tabular}
-    \end{table}
-    \begin{itemize}
-        \item PRAE achieves $J = 0.18$ (2017$\to$2015), the highest overlap across all model-year pairs
-        \item TF-OCSVM and PNN detection sets are year-specific: $J \approx 0$
-    \end{itemize}
-    \takehome{PRAE generalises best across years (Jaccard 0.07--0.18); TF-OCSVM and PNN are year-specific detectors.}
+    \includegraphics[width=0.7\linewidth]{../figures/results/fig_5_9_detection_overlap.pdf}
+
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \begin{itemize}
+                \item PRAE overlap highest: $J = 0.18$
+                \item TF-OCSVM and PNN overlaps near zero
+            \end{itemize}
+            \begin{tcolorbox}[keybox, title=]
+                PRAE generalises best.
+            \end{tcolorbox}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \begin{table}[h]
+            \centering
+            \footnotesize
+            \begin{tabular}{llr}
+            \toprule
+            \textbf{Train} & \textbf{Model} & \textbf{Jaccard $J$} \\
+            \midrule
+            2015 & PRAE     & 0.073 \\
+            2017 & PRAE     & 0.180 \\
+            both & TF-OCSVM & $\approx 0$ \\
+            both & PNN      & $\approx 0$ \\
+            \bottomrule
+            \end{tabular}
+            \end{table}
+        \end{column}
+    \end{columns}
+
     \note{Jaccard $J = 0.18$ means that 18\% of the windows flagged by either the 2015- or 2017-trained PRAE are flagged by both, a non-trivial overlap for models trained 2 years apart on the same instrument.}
 \end{frame}
 
@@ -871,17 +953,12 @@
 % SLIDE 32: LIMITATIONS
 % ======================================================================
 \begin{frame}{Limitations}
-    \begin{enumerate}
-        \item No ground-truth manipulation labels: precision/recall cannot be computed
-        \item Single instrument (TOTF.PA), only 3 distal test days per split
-        \item Nystr{\"o}m $m{=}300$ landmarks: unquantified approximation error
-        \item Feature parameters adopted from crypto literature without equity-specific ablation
-        \item Box-Cox scaler fitted on day~1 only: potential miscalibration under shift
-        \item Training restricted to first hour: misses intraday regime changes
-        \item PNN single hidden layer: limited capacity for complex distributions
-        \item RFDR Gaussian assumption violated by heavy-tailed scores
-        \item SPOT/DSPOT $n_{\text{init}}{=}1000$: insufficient tail mass in low-density periods
-    \end{enumerate}
+    \begin{itemize}
+        \item No ground-truth labels, precision and recall unavailable
+        \item Single instrument (TOTF.PA), only three distal days per split
+        \item Approximation and tail assumptions unquantified
+        \item First-hour training misses intraday regime shifts
+    \end{itemize}
     \note{The most consequential limitation is the absence of labels, which prevents reporting standard classification metrics and forces all evaluation to rely on indirect proxies (gain alignment, jump co-occurrence, cross-year overlap).}
 \end{frame}
 
@@ -899,43 +976,34 @@
     Score type     & Dissimilarity       & Spoofing gain $G$    & Reconstruction $\|x - \hat{x}\|^2$ \\
     $\rho_s$ with $G$ & +0.415 (2017)    & +1.000 (by design)  & $-0.143$ (2017) \\
     Jump co-occ.   & 6.7$\times$ (2015)   & 18.4$\times$ (2017) & Both years \\
-    Cross-year $J$ & $\approx 0$          & $\approx 0$          & 0.07--0.18 \\
+    Cross-year $J$ & $\approx 0$          & $\approx 0$          & 0.07 to 0.18 \\
     Key drivers    & Cancellation         & Hawkes limit         & Hawkes limit \\
     \bottomrule
     \end{tabular}
     \end{table}
     \vspace{0.15cm}
     \begin{itemize}
-        \item PNN: economically interpretable, but year-sensitive (150-fold rate difference)
-        \item TF-OCSVM: emergent gain alignment, but collapses on cross-year data
-        \item PRAE: most robust ($J{=}0.18$), but flags less spoofable states
+        \item PNN interpretable, highly year-sensitive rates
+        \item TF-OCSVM gain-aligned, weak cross-year transfer
+        \item PRAE robust, lower spoofability alignment
+        \item Deployment: PRAE+RFDR baseline, PNN for interpretability, periodic recalibration
     \end{itemize}
-    \note{No single model dominates. A production system should combine PRAE for robustness with PNN for economic interpretability, using RFDR thresholding.}
+    \note{No single model dominates. A production system should combine PRAE for robustness with PNN for economic interpretability, using RFDR thresholding. PNN and TF-OCSVM require high-frequency retraining due to score-scale drift across years. The PRAE paired with dynamic relative thresholding represents the most stable single-model architecture for continuous deployment.}
 \end{frame}
 
 % ======================================================================
 % SLIDE 34: INTERPRETATION
 % ======================================================================
 \begin{frame}{Interpretation: Detected Anomalies and Model Blind Spots}
-    \textbf{Spoofing/layering signatures:}
     \begin{itemize}
-        \item Elevated Hawkes limit-order memory (large, deep placements)
-        \item High cancellation rapidity at L1; maps to place $\to$ shift $\to$ execute $\to$ cancel
+        \item Spoofing signatures: Hawkes memory, rapid cancellations
+        \item Legitimate overlap: volume surges, spread expansions
+        \item Blind spot: subtle low-volume spoofing
+        \item Blind spots: multi-day and message-rate manipulation
     \end{itemize}
-    \vspace{0.15cm}
-    \textbf{Legitimate events captured:}
-    \begin{itemize}
-        \item Volume surges (block trades, institutional execution)
-        \item Spread expansions (news impact, low-liquidity episodes)
-    \end{itemize}
-    \vspace{0.15cm}
-    \textbf{Likely missed patterns:}
-    \begin{itemize}
-        \item Subtle, low-volume spoofing (below anomaly score thresholds)
-        \item Multi-day strategic manipulation (single-day windows)
-        \item Quote stuffing via message-rate flooding (not in Level-2 data)
-    \end{itemize}
-    \takehome{Definitive classification requires regulatory cross-referencing; the pipeline identifies candidate events with structural spoofing properties.}
+    \begin{tcolorbox}[keybox, title=]
+        Definitive classification requires regulatory cross-referencing; the pipeline identifies candidate events with structural spoofing properties.
+    \end{tcolorbox}
     \note{The two-cluster taxonomy from HDBSCAN partially separates the spoofing-type pattern from the volume-type pattern. Full disambiguation requires order-level (Level-3) data.}
 \end{frame}
 
@@ -949,13 +1017,12 @@
 % SLIDE 35: CONTRIBUTIONS
 % ======================================================================
 \begin{frame}{Contributions}
-    \begin{enumerate}
-        \item Modular unsupervised pipeline combining three complementary models (TF-OCSVM, PNN, PRAE) on a single equity LOB dataset (TOTF.PA, 2010/2015/2017)
-        \item Feature library of 89 features (${\sim}7\times$ Poutr{\'e} et al.); Hawkes limit-order memory and cancellation features identified as top drivers across all models
-        \item First application of the spoofing gain framework (Fabre \& Challet) to equity LOB data: 0.07\% of 2017 windows yield $G > 0$
-        \item Systematic comparison of four label-free thresholds: RFDR and POT are the most stable; DSPOT degenerates on bounded scores
-        \item Robustness hierarchy established: PRAE > TF-OCSVM > PNN (Jaccard 0.07--0.18 vs.\ ${\sim}0$)
-    \end{enumerate}
+    \begin{itemize}
+        \item Three-model unsupervised pipeline on equity LOB
+        \item 89-feature library, Hawkes and cancellation drivers
+        \item Equity spoofing-gain application: 0.07\% positive windows
+        \item Threshold and robustness ranking, PRAE strongest
+    \end{itemize}
     \note{The main finding is that unsupervised probabilistic models can detect structurally consistent anomalies across years, but each model captures a different anomaly facet. The PRAE is the recommended single-model choice for robustness.}
 \end{frame}
 
@@ -963,14 +1030,12 @@
 % SLIDE 36: FUTURE WORK
 % ======================================================================
 \begin{frame}{Future Work}
-    \begin{enumerate}
-        \item \textbf{Multi-asset evaluation:} extend to diverse instruments, venues, and asset classes to test generalisability beyond TOTF.PA
-        \item \textbf{Level-3 integration:} use message-level data for granular event classification and direct observation of order placement/cancellation intent
-        \item \textbf{Deeper density estimation:} replace PNN single-layer MLP with attention-based or normalising-flow architectures for richer conditional distributions
-        \item \textbf{Online continual learning:} transition from batch sequential training to online parameter updates with automated concept drift detection
-        \item \textbf{Cryptocurrency validation:} evaluate on crypto LOBs where manipulation prevalence is higher, using the same pipeline and features
-        \item \textbf{Synthetic calibration:} calibrate thresholds against spoofing patterns generated by agent-based market simulators
-    \end{enumerate}
+    \begin{itemize}
+        \item Multi-asset evaluation across venues and classes
+        \item Level-3 integration for intent-level classification
+        \item Richer density models and continual learning (e.g., attention-based architecture for PNN)
+        \item Crypto validation and synthetic spoofing calibration
+    \end{itemize}
     \note{The most impactful next step is cryptocurrency validation, where the higher manipulation base rate provides a natural validation set for the pipeline's detection capabilities.}
 \end{frame}
 
@@ -978,7 +1043,6 @@
 % ######################################################################
 % CLOSING
 % ######################################################################
-\section*{}
 \begin{frame}{}
     \centering
     \LARGE{Thank you for your attention.}
@@ -1103,6 +1167,67 @@
 \begin{frame}{Appendix: Anomaly Cluster Temporal Distribution}
     \centering
     \includegraphics[width=0.82\linewidth]{../figures/results/fig_5_7_cluster_temporal.pdf}
+\end{frame}
+
+% ======================================================================
+% APPENDIX A9: ARCHITECTURE DETAILS - TF-OCSVM
+% ======================================================================
+\begin{frame}{Appendix: Architecture Details - TF-OCSVM}
+    \begin{tcolorbox}[keybox, title=Transformer Bottleneck AE]
+        \begin{itemize}
+            \item Input $(25 \times 89)$ $\to$ 128-dim latent $\to$ reconstruction
+            \item 6 layers, 8 heads, $d_{\text{ff}}{=}512$; MSE loss (Adam, $\eta{=}10^{-4}$, patience 20)
+            \item Gradient clipping: max norm 1.0
+        \end{itemize}
+    \end{tcolorbox}
+    \begin{tcolorbox}[keybox, title=Nystr{\"o}m OC-SVM]
+        \begin{itemize}
+            \item Nystr{\"o}m approximation ($m{=}300$ landmarks), RBF $\gamma$ via median heuristic
+            \item SGD training (500 epochs, $\nu{=}0.01$, lr $= 10^{-2}$, momentum 0.9, batch 256)
+            \item Offset $\rho$ reset to $\nu$-quantile of training projections after SGD
+        \end{itemize}
+    \end{tcolorbox}
+    \begin{tcolorbox}[keybox, title=Dissimilarity Score]
+        $d(\mathbf{z}) = -f(\mathbf{z}) = \rho - \mathbf{w}^\top \Phi(\mathbf{z})$; \quad baseline $\tau_0 = Q_{1-\nu}$ of training scores
+    \end{tcolorbox}
+\end{frame}
+
+% ======================================================================
+% APPENDIX A10: ARCHITECTURE DETAILS: PNN
+% ======================================================================
+\begin{frame}{Appendix: Architecture Details: PNN}
+    \begin{tcolorbox}[keybox, title=Architecture]
+        \begin{itemize}
+            \item Single hidden layer ($d_h{=}64$, ReLU), Markovian: last time step only
+            \item Output: skew-normal parameters $(\mu, \sigma, \alpha)$ for $\Delta p_{\text{mid}}$
+            \item $\sigma = \mathrm{Softplus}(\sigma_{\text{raw}}) + 10^{-6}$
+        \end{itemize}
+    \end{tcolorbox}
+    \begin{tcolorbox}[keybox, title=Training Objective]
+        Skew-normal NLL: $\mathcal{L} = -\frac{1}{|\mathcal{B}|}\sum_i \ln\bigl(\frac{2}{\sigma_i}\,\varphi(z_i)\,\Phi(\alpha_i z_i) + 10^{-10}\bigr)$
+    \end{tcolorbox}
+    \begin{tcolorbox}[keybox, title=Spoofing Gain Parameters]
+        $Q{=}4{,}500$, $q{=}100$, $\delta_a{=}0$, $\delta_b{=}0.01$; maker fee $\varepsilon^+{=}0$, taker fee $\varepsilon^-{=}8 \times 10^{-4}$ (Euronext Paris)
+    \end{tcolorbox}
+\end{frame}
+
+% ======================================================================
+% APPENDIX A11: ARCHITECTURE DETAILS: PRAE
+% ======================================================================
+\begin{frame}{Appendix: Architecture Details: PRAE}
+    \begin{tcolorbox}[keybox, title=Architecture]
+        \begin{itemize}
+            \item Same Transformer backbone as TF-OCSVM ($d_{\text{model}}{=}128$, $h{=}8$, $N{=}6$)
+            \item Learnable per-sample gate: $g_i = \mathrm{clamp}(\mu_i + \varepsilon_i,\; 0,\; 1)$, \quad $\varepsilon_i \sim \mathcal{N}(0,\, 0.5^2)$
+            \item Gate initialisation: $\mu_i = 0.5$; per-sample errors clamped to $10^6$
+        \end{itemize}
+    \end{tcolorbox}
+    \begin{tcolorbox}[keybox, title=Training Objective]
+        $\mathcal{L}_1 = \mathbb{E}\bigl(\sum_i g_i \|x_i - \hat{x}_i\|^2 - \lambda \|\mathbf{g}\|_1\bigr)$
+    \end{tcolorbox}
+    \begin{tcolorbox}[keybox, title=$\lambda$ Tuning (Day~1)]
+        $\lambda_{\text{heuristic}} = \overline{\|\mathbf{x}\|^2} \cdot k \cdot d_{\text{in}}$; grid search over $\{0.001, 0.005, \ldots, 1.0\}$ multipliers, 15 epochs each. Result: $\lambda_{2015} = 1109.3$, $\lambda_{2017} = 215.4$.
+    \end{tcolorbox}
 \end{frame}
 
 \end{document}

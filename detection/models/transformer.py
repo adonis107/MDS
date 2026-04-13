@@ -1,4 +1,4 @@
-import numpy as np
+﻿import numpy as np
 import torch
 import torch.nn as nn
 
@@ -43,9 +43,9 @@ class BottleneckTransformerEncoder(nn.Module):
     def forward(self, x):
         x = self.embedding(x) * np.sqrt(self.model_dim)
 
-        x_pos = x.permute(1, 0, 2) # (Seq_len, Batch, Features)
+        x_pos = x.permute(1, 0, 2)
         x_pos = self.pos_encoder(x_pos)
-        x = x_pos.permute(1, 0, 2) # (Batch, Seq_len, Features)
+        x = x_pos.permute(1, 0, 2)
 
         encoded_seq = self.transformer_encoder(x)
 

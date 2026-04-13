@@ -1,4 +1,4 @@
-"""End-to-end verification of the dissimilarity score and baseline tau.
+﻿"""End-to-end verification of the dissimilarity score and baseline tau.
 
 Generates synthetic data, fits an OC-SVM, and checks:
 1. dissimilarity_score == -decision_function  (by definition)
@@ -23,7 +23,6 @@ def main():
     np.random.seed(42)
     torch.manual_seed(42)
 
-    # --- Synthetic data ---
     n_normal = 500
     n_outlier = 20
     d = 16
@@ -31,25 +30,21 @@ def main():
     X_normal = np.random.randn(n_normal, d).astype(np.float32) * 0.5
     X_outlier = np.random.randn(n_outlier, d).astype(np.float32) * 0.5 + 5.0
     X_all = np.vstack([X_normal, X_outlier])
-    labels = np.array([0] * n_normal + [1] * n_outlier)  # 0=normal, 1=outlier
+    labels = np.array([0] * n_normal + [1] * n_outlier)
 
-    # --- Fit OC-SVM on normal data only ---
     ocsvm = OCSVM(nu=0.05, n_components=50, sgd_epochs=200, batch_size=128)
     ocsvm.fit(X_normal)
 
-    # --- Check 1: dissimilarity == -decision_function ---
     df = ocsvm.decision_function(X_all)
     ds = ocsvm.dissimilarity_score(X_all)
     assert np.allclose(ds, -df, atol=1e-6), "FAIL: dissimilarity != -decision_function"
     print("[PASS] Check 1: dissimilarity_score == -decision_function")
 
-    # --- Check 2: predict(tau=0) matches sign ---
     preds = ocsvm.predict(X_all, tau=0.0)
     expected = np.where(ds >= 0.0, 1, -1)
     assert np.array_equal(preds, expected), "FAIL: predict(tau=0) mismatch"
     print("[PASS] Check 2: predict(X, tau=0) consistent with dissimilarity >= 0")
 
-    # --- Check 3: fit_baseline_tau is correct quantile ---
     scores_train = ocsvm.dissimilarity_score(X_normal)
     contamination = 0.01
     tau = OCSVM.fit_baseline_tau(scores_train, contamination=contamination)
@@ -57,11 +52,9 @@ def main():
     assert abs(tau - expected_tau) < 1e-10, f"FAIL: tau={tau} != expected={expected_tau}"
     print(f"[PASS] Check 3: fit_baseline_tau = {tau:.6f} (quantile {1-contamination:.2f})")
 
-    # --- Check 4: tau is in valid range ---
     assert scores_train.min() <= tau <= scores_train.max(), "FAIL: tau outside score range"
     print(f"[PASS] Check 4: tau in [{scores_train.min():.4f}, {scores_train.max():.4f}]")
 
-    # --- Check 5: outliers have higher dissimilarity ---
     mean_normal = ds[:n_normal].mean()
     mean_outlier = ds[n_normal:].mean()
     assert mean_outlier > mean_normal, (
@@ -71,7 +64,6 @@ def main():
     print(f"[PASS] Check 5: mean dissimilarity: normal={mean_normal:.4f}, "
           f"outlier={mean_outlier:.4f}")
 
-    # --- Check 6: predict with baseline tau flags fewer events than tau=0 ---
     preds_baseline = ocsvm.predict(X_all, tau=tau)
     n_flagged_zero = (preds == 1).sum()
     n_flagged_tau = (preds_baseline == 1).sum()
@@ -79,7 +71,6 @@ def main():
     print(f"[PASS] Check 6: flagged with tau=0: {n_flagged_zero}, "
           f"with baseline tau: {n_flagged_tau}")
 
-    # --- Summary ---
     print("\n=== All 6 checks passed ===")
     print(f"  OC-SVM fitted on {n_normal} normal points ({d}-dim)")
     print(f"  Tested on {n_normal} normal + {n_outlier} outliers")

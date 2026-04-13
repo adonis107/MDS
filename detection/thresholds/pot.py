@@ -1,4 +1,4 @@
-import numpy as np 
+﻿import numpy as np 
 
 from math import log
 from detection.thresholds.utils.grimshaw import Grimshaw
@@ -32,14 +32,11 @@ def PeakOverThreshold(
     """
     t = SetInitialThreshold(data, init_level)
 
-    # Find Peaks
     y = data[data > t] - t
 
-    # If no peaks found, fall back to the initial threshold
     if y.size == 0:
         return t, t
 
-    # Grimshaw
     gamma, sigma = Grimshaw(
         peaks=y, 
         threshold=t, 
@@ -47,7 +44,6 @@ def PeakOverThreshold(
         epsilon=epsilon
     )
 
-    # Calculate the Threshold
     z = CalcThreshold(
         q = risk,
         gamma = gamma,

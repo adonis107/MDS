@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import csv
 import json
 import logging
@@ -53,13 +53,11 @@ def parse_args() -> argparse.Namespace:
         help="Score stream names, or 'all'.",
     )
 
-    # POT params
     parser.add_argument("--pot-risk", type=float, default=1e-4)
     parser.add_argument("--pot-init-level", type=float, default=0.98)
     parser.add_argument("--pot-num-candidates", type=int, default=10)
     parser.add_argument("--pot-epsilon", type=float, default=1e-8)
 
-    # DSPOT params
     parser.add_argument("--dspot-risk", type=float, default=1e-4)
     parser.add_argument("--dspot-init-level", type=float, default=0.98)
     parser.add_argument("--dspot-num-candidates", type=int, default=10)
@@ -67,7 +65,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dspot-num-init", type=int, default=0, help="0 means auto")
     parser.add_argument("--dspot-depth", type=int, default=50)
 
-    # RFDR params
     parser.add_argument("--rfdr-window", type=int, default=500)
     parser.add_argument("--rfdr-alpha", type=float, default=0.05)
 
@@ -131,13 +128,11 @@ def _concat_streams(cache_root: str, manifest: Dict) -> Tuple[Dict[str, np.ndarr
     }
     period_labels = np.concatenate(period_parts) if period_parts else np.empty((0,), dtype="<U32")
 
-    # Normalize lengths to the shortest common length for safe downstream masking.
     if concat_streams:
         min_len = min(len(arr) for arr in concat_streams.values())
         concat_streams = {k: v[:min_len] for k, v in concat_streams.items()}
         period_labels = period_labels[:min_len]
 
-        # Rebuild day boundaries to not exceed min_len.
         clipped = [0]
         for b in day_boundaries[1:]:
             clipped.append(min(b, min_len))
@@ -323,7 +318,6 @@ def main() -> None:
             logger.warning("Skipping %s (too few samples: %d)", stream_name, len(scores))
             continue
 
-        # Save stream-level arrays once (shared across all methods)
         stream_dir = os.path.join(threshold_root, stream_name)
         os.makedirs(stream_dir, exist_ok=True)
         np.save(os.path.join(stream_dir, "scores.npy"), scores.astype(np.float32))

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Generate all figures for Section 5.3 (Threshold Comparison).
 
 Applies four thresholding methods (POT, SPOT, DSPOT, RFDR) to each model's
@@ -25,9 +25,6 @@ from detection.thresholds.spot import StreamingPeakOverThreshold
 from detection.thresholds.dspot import DriftStreamingPeakOverThreshold
 from detection.thresholds.rfdr import RollingFalseDiscoveryRate
 
-# ────────────────────────────────────────────────────────────────────
-# Configuration (from config/default.yaml)
-# ────────────────────────────────────────────────────────────────────
 THRESHOLD_PARAMS = dict(
     risk=0.001,
     init_level=0.98,
@@ -38,16 +35,12 @@ THRESHOLD_PARAMS = dict(
     alpha=0.05,
 )
 
-# Results are computed for the specified training year.
 YEAR = "2015"
 DATA_DIR = os.path.join("results", YEAR, "test_output")
 OUT_DIR = os.path.join("figures", "results")
 STATS_PATH = os.path.join(OUT_DIR, "threshold_comparison_stats.json")
 os.makedirs(OUT_DIR, exist_ok=True)
 
-# ────────────────────────────────────────────────────────────────────
-# Plot style (matches Sections 5.1 / 5.2)
-# ────────────────────────────────────────────────────────────────────
 plt.rcParams.update({
     "font.size": 10,
     "axes.titlesize": 11,
@@ -73,10 +66,9 @@ METHOD_KEYS   = ["pot", "spot", "dspot", "rfdr"]
 METHOD_LABELS = {"pot": "POT", "spot": "SPOT", "dspot": "DSPOT", "rfdr": "RFDR"}
 METHOD_COLORS = {"pot": BLUE, "spot": ORANGE, "dspot": RED, "rfdr": PURPLE}
 
-# Subsample size for streaming methods
 SUBSAMPLE_N = 100_000
-RFDR_SUBSAMPLE_N = 20_000  # RFDR is O(n*w) per element; keep small
-STREAMING_TIMEOUT = 180  # seconds per streaming method call
+RFDR_SUBSAMPLE_N = 20_000
+STREAMING_TIMEOUT = 180
 
 
 def save_fig(fig, name):
@@ -86,9 +78,6 @@ def save_fig(fig, name):
     print(f"  saved {path}")
 
 
-# ────────────────────────────────────────────────────────────────────
-# Load metadata
-# ────────────────────────────────────────────────────────────────────
 with open(os.path.join(DATA_DIR, "test_meta.json")) as f:
     META = json.load(f)
 
@@ -111,9 +100,6 @@ def get_split_mask(n, split):
     return mask
 
 
-# ────────────────────────────────────────────────────────────────────
-# Apply thresholding methods
-# ────────────────────────────────────────────────────────────────────
 def apply_pot(scores):
     """Return (threshold_scalar, t_init)."""
     z, t = PeakOverThreshold(
@@ -193,17 +179,14 @@ def apply_rfdr(scores):
     preds = np.zeros(n, dtype=bool)
     thresholds = np.zeros(n, dtype=np.float64)
 
-    # Process in chunks using stride_tricks for the rolling window
     for i in range(ws, n):
         window = scores[max(0, i - ws + 1):i + 1]
         wn = len(window)
         if wn < 20:
             continue
-        # Log transform
         min_val = window.min()
         shifted = window + (abs(min_val) + 1e-6) if min_val <= 0 else window
         logged = np.log(shifted)
-        # Robust z-scores
         med = np.median(logged)
         diff = np.abs(logged - med)
         mad = np.median(diff)
@@ -211,9 +194,7 @@ def apply_rfdr(scores):
             mad = np.mean(diff) + 1e-10
         robust_sigma = mad * 1.4826
         z = (logged - med) / robust_sigma
-        # p-values
         pv = _stats.norm.sf(z)
-        # BH correction
         sorted_idx = np.argsort(pv)
         sorted_pv = pv[sorted_idx]
         ranks = np.arange(1, wn + 1)
@@ -236,19 +217,18 @@ def compute_all_thresholds(model_key):
     Compute thresholds for one model using all four methods.
 
     Returns dict:
-      {method: {"tau": float,           # representative threshold
-                "tau_p10": float,        # 10th pctile (for adaptive methods)
-                "tau_p90": float,        # 90th pctile
-                "anomaly_rate": float,   # on full array
-                "rate_ta": float,        # on T_A
-                "rate_tb": float,        # on T_B
-                "preds_full": np.array}} # boolean predictions on full array
+      {method: {"tau": float,
+                "tau_p10": float,
+                "tau_p90": float,
+                "anomaly_rate": float,
+                "rate_ta": float,
+                "rate_tb": float,
+                "preds_full": np.array}}
     """
     print(f"\n  Loading {model_key} scores...")
     scores_full = np.load(os.path.join(DATA_DIR, f"{model_key}_scores.npy"))
     n = len(scores_full)
 
-    # Handle NaN: replace with median for thresholding
     nan_mask = np.isnan(scores_full)
     if nan_mask.any():
         median_val = np.nanmedian(scores_full)
@@ -258,20 +238,16 @@ def compute_all_thresholds(model_key):
     else:
         scores_clean = scores_full
 
-    # Subsample for streaming methods:
-    # Use sorted subsample to preserve temporal order while covering distribution
     rng = np.random.default_rng(42)
     sub_idx = np.sort(rng.choice(n, size=min(SUBSAMPLE_N, n), replace=False))
     scores_sub = scores_clean[sub_idx].copy()
     print(f"    Subsample: {len(scores_sub)} random samples")
 
-    # Split masks
     mask_ta = get_split_mask(n, "test_proximate")
     mask_tb = get_split_mask(n, "test_distal")
 
     results = {}
 
-    # --- POT (batch, on full array) ---
     print(f"    POT...", end=" ", flush=True)
     t0 = time.time()
     tau_pot, _ = apply_pot(scores_clean)
@@ -287,12 +263,10 @@ def compute_all_thresholds(model_key):
     }
     print(f"tau={tau_pot:.6f}, rate={preds_pot.mean()*100:.4f}% ({time.time()-t0:.1f}s)")
 
-    # Fast path: if POT threshold exceeds max score, streaming methods are futile
     pot_exceeds_max = tau_pot > scores_clean.max()
     if pot_exceeds_max:
         print(f"    [POT tau > max(scores); streaming methods will use POT fallback]")
 
-    # --- SPOT (streaming, on subsample) ---
     print(f"    SPOT...", end=" ", flush=True)
     t0 = time.time()
     if pot_exceeds_max:
@@ -313,7 +287,6 @@ def compute_all_thresholds(model_key):
     }
     print(f"tau_med={tau_spot_med:.6f}, rate={preds_spot.mean()*100:.4f}% ({time.time()-t0:.1f}s)")
 
-    # --- DSPOT (streaming, on subsample) ---
     print(f"    DSPOT...", end=" ", flush=True)
     t0 = time.time()
     if pot_exceeds_max:
@@ -334,14 +307,12 @@ def compute_all_thresholds(model_key):
     }
     print(f"tau_med={tau_dspot_med:.6f}, rate={preds_dspot.mean()*100:.4f}% ({time.time()-t0:.1f}s)")
 
-    # --- RFDR (streaming, on smaller subsample) ---
     print(f"    RFDR...", end=" ", flush=True)
     t0 = time.time()
     rng2 = np.random.default_rng(99)
     rfdr_idx = np.sort(rng2.choice(n, size=min(RFDR_SUBSAMPLE_N, n), replace=False))
     scores_rfdr_sub = scores_clean[rfdr_idx].copy()
     _, rfdr_thresholds = apply_rfdr(scores_rfdr_sub)
-    # RFDR threshold is the score above which anomalies are flagged
     valid_thr = rfdr_thresholds[rfdr_thresholds > 0]
     if len(valid_thr) == 0:
         valid_thr = rfdr_thresholds[THRESHOLD_PARAMS["window_size"]:]
@@ -361,9 +332,6 @@ def compute_all_thresholds(model_key):
     return results
 
 
-# ────────────────────────────────────────────────────────────────────
-# Compute thresholds for all models
-# ────────────────────────────────────────────────────────────────────
 print("=" * 60)
 print("Computing thresholds for all models...")
 print("=" * 60)
@@ -372,7 +340,6 @@ ALL_RESULTS = {}
 for mk in MODEL_KEYS:
     ALL_RESULTS[mk] = compute_all_thresholds(mk)
 
-# Save stats (without the large preds arrays)
 stats_out = {}
 for mk in MODEL_KEYS:
     stats_out[mk] = {}
@@ -384,9 +351,6 @@ with open(STATS_PATH, "w") as f:
 print(f"\nSaved stats to {STATS_PATH}")
 
 
-# ────────────────────────────────────────────────────────────────────
-# Figure 5.3.1 — Threshold values by method and model
-# ────────────────────────────────────────────────────────────────────
 def fig_threshold_values():
     fig, axes = plt.subplots(1, 3, figsize=(12, 3.8))
     for ax, mk in zip(axes, MODEL_KEYS):
@@ -416,9 +380,6 @@ def fig_threshold_values():
     save_fig(fig, "fig_5_3_threshold_values.pdf")
 
 
-# ────────────────────────────────────────────────────────────────────
-# Figure 5.3.2 — Anomaly rates by threshold method (one panel per model)
-# ────────────────────────────────────────────────────────────────────
 def fig_anomaly_rates_by_method():
     fig, axes = plt.subplots(1, 3, figsize=(12, 3.8))
     split_labels = {
@@ -460,12 +421,8 @@ def fig_anomaly_rates_by_method():
     save_fig(fig, "fig_5_3_anomaly_rates_by_method.pdf")
 
 
-# ────────────────────────────────────────────────────────────────────
-# Figure 5.3.3 — Score series with all four thresholds (one day)
-# ────────────────────────────────────────────────────────────────────
 def fig_score_series_thresholds():
     """Plot one proximate test day's score series with 4 threshold lines."""
-    # Use first proximate day
     prox_idx = [i for i, l in enumerate(DAY_SPLITS) if l == "test_proximate"][0]
     start = DAY_BOUNDARIES[prox_idx]
     end   = DAY_BOUNDARIES[prox_idx + 1]
@@ -478,7 +435,6 @@ def fig_score_series_thresholds():
             mmap_mode="r"
         )[start:end].copy()
 
-        # Replace NaN with median for display
         nan_m = np.isnan(scores_day)
         if nan_m.any():
             scores_day[nan_m] = np.nanmedian(scores_day)
@@ -491,14 +447,12 @@ def fig_score_series_thresholds():
         ax.plot(x, scores_day[idx], color=MODEL_COLORS[mk],
                 linewidth=0.4, alpha=0.7, rasterized=True)
 
-        # Draw threshold lines
         for meth in METHOD_KEYS:
             tau = ALL_RESULTS[mk][meth]["tau"]
             ax.axhline(tau, color=METHOD_COLORS[meth], linestyle="--",
                        linewidth=1.0, label=f"{METHOD_LABELS[meth]} ({tau:.4f})"
                        if abs(tau) < 10 else f"{METHOD_LABELS[meth]} ({tau:.1f})")
 
-        # Shade regions where ALL methods agree on anomaly
         all_agree = np.ones(len(idx), dtype=bool)
         any_flag  = np.zeros(len(idx), dtype=bool)
         for meth in METHOD_KEYS:
@@ -524,14 +478,11 @@ def fig_score_series_thresholds():
         ax.spines["right"].set_visible(False)
 
     axes[-1].set_xlabel("Normalised time (0 = open, 1 = close)")
-    fig.suptitle(f"Score series with threshold overlays — {day_str}", fontsize=11, y=1.01)
+    fig.suptitle(f"Score series with threshold overlays â€” {day_str}", fontsize=11, y=1.01)
     fig.tight_layout()
     save_fig(fig, "fig_5_3_score_series_thresholds.pdf")
 
 
-# ────────────────────────────────────────────────────────────────────
-# Figure 5.3.4 — Pairwise Jaccard heatmaps
-# ────────────────────────────────────────────────────────────────────
 def jaccard(a, b):
     inter = (a & b).sum()
     union = (a | b).sum()
@@ -568,16 +519,12 @@ def fig_jaccard_heatmaps():
     save_fig(fig, "fig_5_3_jaccard_heatmaps.pdf")
 
 
-# ────────────────────────────────────────────────────────────────────
-# Figure 5.3.5 — T_A vs T_B scatter
-# ────────────────────────────────────────────────────────────────────
 def fig_ta_vs_tb():
     from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
 
     fig, ax = plt.subplots(figsize=(5.5, 5))
     markers = {"transformer_ocsvm": "o", "pnn": "s", "prae": "D"}
 
-    # Collect all points
     all_ta, all_tb = [], []
     for mk in MODEL_KEYS:
         for meth in METHOD_KEYS:
@@ -589,7 +536,6 @@ def fig_ta_vs_tb():
                        marker=markers[mk], s=60, edgecolor="black", linewidth=0.5,
                        zorder=3)
 
-    # diagonal
     lim_max = max(max(all_ta), max(all_tb)) * 1.15
     ax.plot([0, lim_max], [0, lim_max], "k--", linewidth=0.8, alpha=0.5)
     ax.set_xlim(0, lim_max)
@@ -601,15 +547,12 @@ def fig_ta_vs_tb():
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
-    # ── Inset zoom on low-rate region ──
-    # Determine zoom limits: exclude extreme outliers (> 5%)
     low_ta = [v for v in all_ta if v <= 5]
     low_tb = [v for v in all_tb if v <= 5]
     if low_ta and low_tb:
         zoom_max = max(max(low_ta), max(low_tb)) * 1.25
         axins = inset_axes(ax, width="45%", height="45%", loc="center right",
                            borderpad=1.5)
-        # Re-plot points in inset
         for mk in MODEL_KEYS:
             for meth in METHOD_KEYS:
                 r = ALL_RESULTS[mk][meth]
@@ -626,7 +569,6 @@ def fig_ta_vs_tb():
         mark_inset(ax, axins, loc1=2, loc2=4, fc="none", ec="0.5",
                    linewidth=0.8, linestyle="--")
 
-    # legend: markers for models, colors for methods
     handles_model = [plt.Line2D([0], [0], marker=markers[mk], color="gray",
                                 markerfacecolor="gray", markersize=7, linestyle="None",
                                 label=MODEL_LABELS[mk]) for mk in MODEL_KEYS]
@@ -637,9 +579,6 @@ def fig_ta_vs_tb():
     save_fig(fig, "fig_5_3_ta_vs_tb.pdf")
 
 
-# ────────────────────────────────────────────────────────────────────
-# Main
-# ────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("Generating Section 5.3 figures...")

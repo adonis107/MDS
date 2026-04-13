@@ -1,4 +1,4 @@
-"""
+﻿"""
 Jump analysis for Section 5.8: co-occurrence of flagged windows with
 subsequent mid-price jumps, average price path around flags, and lead
 time distribution.
@@ -21,7 +21,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
-# ── Constants ───────────────────────────────────────────────────────
 OUT_DIR = os.path.join("figures", "results")
 os.makedirs(OUT_DIR, exist_ok=True)
 
@@ -35,15 +34,13 @@ MODEL_LABELS = {
 }
 DATA_DIR = "data/processed/TOTF.PA-book"
 
-# Jump parameters
-JUMP_QUANTILE = 0.9995       # 99.95th percentile of |r| → extreme moves
-JUMP_HORIZON = 100           # look-ahead window (events)
-EVENT_STUDY_HALF = 250       # ±250 events for price path
-N_PERM = 2000                # permutation iterations
-N_ES_MAX = 5000              # max windows for event study subsample
-N_BOOTSTRAP = 500            # bootstrap CI iterations
+JUMP_QUANTILE = 0.9995
+JUMP_HORIZON = 100
+EVENT_STUDY_HALF = 250
+N_PERM = 2000
+N_ES_MAX = 5000
+N_BOOTSTRAP = 500
 
-# Plot style
 plt.rcParams.update({
     "font.size": 10, "axes.titlesize": 11, "axes.labelsize": 10,
     "xtick.labelsize": 9, "ytick.labelsize": 9, "legend.fontsize": 8,
@@ -64,11 +61,9 @@ def save_fig(fig, name):
     print(f"  saved {path}")
 
 
-# ── Year-level analysis ────────────────────────────────────────────
 def analyze_year(year):
     print(f"\n{'='*60}\nYear {year}\n{'='*60}")
 
-    # ── Metadata ──
     with open(f"results/{year}/test_output/test_meta.json") as f:
         meta = json.load(f)
     bounds = meta["day_boundaries"]
@@ -78,7 +73,6 @@ def analyze_year(year):
     test_end = bounds[test_days[-1] + 1]
     n_test = test_end - test_start
 
-    # ── Predictions ──
     preds = {}
     for mt in MODEL_TYPES:
         p = np.load(f"results/{year}/test_output/{mt}_preds.npy")[test_start:test_end]
@@ -93,7 +87,6 @@ def analyze_year(year):
     print(f"    Consensus (3/3): {consensus.sum():,}")
     print(f"    Any model (>=1): {any_model.sum():,}")
 
-    # ── Load mid-prices and returns per test day ──
     day_data = []
     all_abs_r = []
     for d in test_days:
@@ -110,7 +103,6 @@ def analyze_year(year):
         all_abs_r.append(np.abs(r))
         del df
 
-    # ── Jump threshold ──
     pooled = np.concatenate(all_abs_r)
     threshold = float(np.percentile(pooled, JUMP_QUANTILE * 100))
     n_jumps_total = int((pooled > threshold).sum())
@@ -123,7 +115,6 @@ def analyze_year(year):
     del all_abs_r, pooled
     gc.collect()
 
-    # ── Compute jump_follows and first_jump_lag per window ──
     jump_follows = np.zeros(n_test, dtype=bool)
     first_jump_lag = np.full(n_test, -1, dtype=np.int32)
 
@@ -133,7 +124,6 @@ def analyze_year(year):
         ls = dd["local_start"]
 
         J = (np.abs(r) > threshold).astype(np.int32)
-        # Sliding-window via cumsum
         J_pad = np.concatenate([J, np.zeros(JUMP_HORIZON, dtype=np.int32)])
         cs = np.concatenate([[0], np.cumsum(J_pad)])
 
@@ -142,7 +132,6 @@ def analyze_year(year):
         has_jump = (cs[end] - cs[anchors]) > 0
         jump_follows[ls:ls + n_seqs] = has_jump
 
-        # First-jump lag via searchsorted
         jpos = np.where(J[:len(r)])[0]
         if len(jpos) > 0:
             wj = np.where(has_jump)[0]
@@ -158,7 +147,6 @@ def analyze_year(year):
     base_rate = float(jump_follows.mean())
     print(f"  Base rate (jump within {JUMP_HORIZON} events): {base_rate:.4%}")
 
-    # ── Co-occurrence rates + permutation test ──
     rng = np.random.default_rng(42)
     categories = {mt: preds[mt] for mt in MODEL_TYPES}
     categories["consensus"] = consensus
@@ -173,7 +161,6 @@ def analyze_year(year):
             continue
         rate = float(jump_follows[mask].mean())
         n_wj = int(jump_follows[mask].sum())
-        # Binomial null (exact for large n)
         null = rng.binomial(n_f, base_rate, size=N_PERM) / n_f
         p_val = max(float((null >= rate).mean()), 1.0 / N_PERM)
         cooc[cat] = dict(
@@ -185,7 +172,6 @@ def analyze_year(year):
         print(f"    {cat}: n={n_f:,}, rate={rate:.4%}, "
               f"ratio={ratio:.2f}x, p={p_val:.4f}")
 
-    # ── Event study price paths ──
     flagged_idx = np.where(any_model)[0]
     if len(flagged_idx) > N_ES_MAX:
         es_idx = np.sort(rng.choice(flagged_idx, N_ES_MAX, replace=False))
@@ -211,7 +197,7 @@ def analyze_year(year):
                 a = j + SEQ_LENGTH - 1
                 s, e = a - HALF, a + HALF + 1
                 if s >= 0 and e <= len(mid):
-                    paths.append(np.log(mid[s:e] / mid[a]) * 1e4)  # bps
+                    paths.append(np.log(mid[s:e] / mid[a]) * 1e4)
         return np.array(paths) if paths else np.empty((0, PL))
 
     print(f"  Extracting price paths ({len(es_idx)} flagged, "
@@ -220,7 +206,6 @@ def analyze_year(year):
     nfp = extract_paths(nf_sample)
     print(f"    {len(fp)} flagged paths, {len(nfp)} non-flagged paths")
 
-    # Bootstrap CI
     if len(fp) >= 2:
         mean_f = fp.mean(axis=0)
         bm = np.empty((N_BOOTSTRAP, PL))
@@ -233,7 +218,6 @@ def analyze_year(year):
 
     mean_nf = nfp.mean(axis=0) if len(nfp) >= 2 else np.full(PL, np.nan)
 
-    # ── Lead time ──
     lt_mask = any_model & jump_follows
     lead_times = first_jump_lag[lt_mask]
     lead_times = lead_times[lead_times >= 0]
@@ -242,7 +226,6 @@ def analyze_year(year):
               f"IQR=[{np.percentile(lead_times, 25):.0f}, "
               f"{np.percentile(lead_times, 75):.0f}]")
 
-    # ── Save jump_analysis.csv ──
     rows = []
     for cat in list(MODEL_TYPES) + ["consensus"]:
         c = cooc[cat]
@@ -272,7 +255,6 @@ def analyze_year(year):
     )
 
 
-# ── Figures ─────────────────────────────────────────────────────────
 def fig_cooccurrence(results):
     """Bar chart: fraction of flagged windows followed by a jump."""
     n_years = len(results)
@@ -305,7 +287,6 @@ def fig_cooccurrence(results):
         ax.bar(x, vals, color=bar_colors, edgecolor="white",
                linewidth=0.5, width=0.6, zorder=3)
 
-        # Null-distribution whiskers
         for i in range(len(vals)):
             ax.plot([i, i], [e_lo[i], e_hi[i]],
                     color="black", linewidth=1.5, zorder=4)
@@ -317,7 +298,6 @@ def fig_cooccurrence(results):
         ax.axhline(base, color="black", ls="--", lw=1, zorder=2,
                    label=f"Base rate = {base:.3%}")
 
-        # Annotate
         active_cats = [c for c in cats if cooc[c]["n_flagged"] > 0]
         for i, cat in enumerate(active_cats):
             c = cooc[cat]
@@ -420,7 +400,6 @@ def fig_lead_time(results):
     save_fig(fig, "fig_5_8_lead_time.pdf")
 
 
-# ── Main ────────────────────────────────────────────────────────────
 def main():
     results = []
     for year in YEARS:

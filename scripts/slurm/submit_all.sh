@@ -1,26 +1,4 @@
-#!/bin/bash
-# ============================================================
-#  Master submission script — full pipeline with dependencies
-#
-#  Submits training (3 models × 2 years = 6 parallel jobs),
-#  testing (1 per year, waits for its 3 training jobs),
-#  post-hoc analysis (waits for all testing), and cleanup.
-#
-#  Usage:
-#    bash scripts/slurm/submit_all.sh
-#    bash scripts/slurm/submit_all.sh --resume 3   # chain 3 resumes per training job
-#
-#  Dependency graph:
-#
-#    train_tf_2015 ──┐
-#    train_pnn_2015 ─┼── test_2015 ──┐
-#    train_prae_2015 ┘               │
-#                                    ├── posthoc ── cleanup
-#    train_tf_2017 ──┐               │
-#    train_pnn_2017 ─┼── test_2017 ──┘
-#    train_prae_2017 ┘
-#
-# ============================================================
+﻿#!/bin/bash
 
 set -euo pipefail
 
@@ -30,7 +8,6 @@ TEST_SCRIPT="$SCRIPT_DIR/test.sh"
 POSTHOC_SCRIPT="$SCRIPT_DIR/posthoc.sh"
 CLEANUP_SCRIPT="$SCRIPT_DIR/cleanup.sh"
 
-# Number of chained resumes per training job (for 24 h timeout recovery)
 N_RESUME="${1:-1}"
 if [[ "$1" == "--resume" ]]; then
     N_RESUME="${2:-3}"
@@ -44,8 +21,7 @@ YEARS=(2015 2017)
 
 echo "=== Submitting full pipeline (${#MODELS[@]} models x ${#YEARS[@]} years, $N_RESUME resume chain(s)) ==="
 
-# Phase 1: Training (6 parallel jobs, each optionally chained for resume)
-declare -A LAST_TRAIN_JOBID  # key="model_year" -> final jobid
+declare -A LAST_TRAIN_JOBID
 
 for year in "${YEARS[@]}"; do
     for model in "${MODELS[@]}"; do
@@ -69,7 +45,6 @@ for year in "${YEARS[@]}"; do
     done
 done
 
-# ── Phase 2: Testing (1 per year, depends on all 3 training jobs for that year) ──
 declare -A TEST_JOBID
 
 for year in "${YEARS[@]}"; do
@@ -89,7 +64,6 @@ for year in "${YEARS[@]}"; do
     TEST_JOBID["$year"]="$jobid"
 done
 
-# ── Phase 3: Post-hoc (depends on all testing) ──
 test_job_ids=""
 for year in "${YEARS[@]}"; do
     tid="${TEST_JOBID["$year"]}"
@@ -101,7 +75,6 @@ out=$(sbatch --dependency="$test_deps" "$POSTHOC_SCRIPT")
 posthoc_jobid=$(echo "$out" | awk '{print $4}')
 echo "  posthoc: jobid=$posthoc_jobid (depends on all testing)"
 
-# ── Phase 4: Cleanup (depends on post-hoc) ──
 out=$(sbatch --dependency="afterok:${posthoc_jobid}" "$CLEANUP_SCRIPT")
 cleanup_jobid=$(echo "$out" | awk '{print $4}')
 echo "  cleanup: jobid=$cleanup_jobid (depends on posthoc)"

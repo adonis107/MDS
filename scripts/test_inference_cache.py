@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import errno
 import glob
 import json
@@ -92,7 +92,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--force", action="store_true", help="Overwrite existing day cache.")
 
-    # Gain parameters for PNN-derived score stream
     parser.add_argument("--spoof-q-big", type=float, default=4500.0)
     parser.add_argument("--spoof-q-small", type=float, default=100.0)
     parser.add_argument("--spoof-delta-a", type=float, default=0.0)
@@ -247,9 +246,6 @@ def compute_pnn_stage(
     spread_seq = np.abs(spread_seq)
     spread_seq = np.where(spread_seq > 0, spread_seq, 1e-4)
 
-    # PNN outputs are in log-return units; the spoofing-gain formula
-    # (Fabre & Challet) expects EUR price changes.  Convert via the
-    # first-order approximation  Δp ≈ r · p_mid.
     mu_eur = mu_arr * mid_price_seq
     sigma_eur = sigma_arr * mid_price_seq
 
@@ -305,14 +301,13 @@ def savez_compressed_safe(path: str, **arrays: np.ndarray) -> None:
     """Write a compressed npz with a clear error on quota/space failures.
 
     Day-level atomicity is already handled by the _COMPLETE.json flag,
-    so we write directly to *path* (no temp+rename — GPFS metadata lag
+    so we write directly to *path* (no temp+rename â€” GPFS metadata lag
     makes that unreliable).
     """
     try:
         np.savez_compressed(path, **arrays)
     except OSError as exc:
         if exc.errno in (errno.EDQUOT, errno.ENOSPC):
-            # Remove the partially-written file so the day can be retried
             if os.path.exists(path):
                 try:
                     os.remove(path)
@@ -321,7 +316,7 @@ def savez_compressed_safe(path: str, **arrays: np.ndarray) -> None:
             raise RuntimeError(
                 "Disk quota / space exceeded while writing cache file "
                 f"{path!r}. Free space or write to a scratch filesystem "
-                "(--results-dir), then relaunch — already-completed days "
+                "(--results-dir), then relaunch â€” already-completed days "
                 "will be skipped automatically."
             ) from exc
         raise

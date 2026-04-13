@@ -1,11 +1,4 @@
-#!/bin/bash
-# Queue several dependent runs of submit_training.sh.
-# Each run resumes from results/resume_state in case of timeout.
-#
-# Usage:
-#   bash queue_resume_chain.sh            # queue 4 runs by default
-#   bash queue_resume_chain.sh 6          # queue 6 runs
-#   bash queue_resume_chain.sh 6 submit_training.sh
+﻿#!/bin/bash
 
 set -euo pipefail
 

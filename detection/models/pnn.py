@@ -1,4 +1,4 @@
-import numpy as np
+﻿import numpy as np
 import math
 import torch
 import torch.nn as nn
@@ -36,10 +36,8 @@ class SkewedGaussianNLL(nn.Module):
         y_true = y_true.view_as(mu)
         z = (y_true - mu) / sigma
 
-        # Skewed Gaussian PDF
         pdf = (2.0 / sigma) * self._phi(z) * self._Phi(alpha * z)
         
-        # Negative Log-Likelihood
         log_pdf = -torch.log(pdf + 1e-10)
         return torch.mean(log_pdf)
 
@@ -55,7 +53,7 @@ class PNN(BaseDeepModel):
 
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(hidden_dim, 3)  # Output: mu, sigma, alpha
+        self.fc2 = nn.Linear(hidden_dim, 3)
         self.softplus = nn.Softplus()
         self.criterion = SkewedGaussianNLL()
 

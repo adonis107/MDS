@@ -1,5 +1,5 @@
-"""
-Preprocess raw LOB CSV files → cleaned parquet with engineered features.
+﻿"""
+Preprocess raw LOB CSV files â†’ cleaned parquet with engineered features.
 
 For each raw daily file in data/raw/TOTF.PA-book/:
   1. Fix column-name misalignment (remove 'Unnamed: 1', shift names left,
@@ -40,19 +40,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger("preprocess")
 
-# paths
 RAW_DIR = os.path.join("data", "raw", "TOTF.PA-book")
 OUT_DIR = os.path.join("data", "processed", "TOTF.PA-book")
 os.makedirs(OUT_DIR, exist_ok=True)
 
-# constants
 TIME_COL = "xltime"
 MARKET_OPEN_HOUR = 9.0
-MARKET_CLOSE_HOUR = 17.5   # Euronext Paris continuous session ends at 17:30
+MARKET_CLOSE_HOUR = 17.5
 WARMUP_STEPS = 3000
 WINDOW = 50
 
-# LOB columns
 LOB_COLUMNS = []
 for level in range(1, 11):
     LOB_COLUMNS += [
@@ -75,7 +72,7 @@ def fix_columns(df: pd.DataFrame) -> pd.DataFrame:
 
     - 41-column files (some parquets): the parquet was written with the
       first data row used as column headers (data values as names, e.g.
-      '42738.21...', '46.49', …).  No extra column — just wrong names.
+      '42738.21...', '46.49', â€¦).  No extra column â€” just wrong names.
       Fix: rename all 41 columns directly.
 
     If the DataFrame already has the correct column names, it is returned
@@ -118,21 +115,16 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     features = pd.DataFrame(index=df.index)
 
-    # base: imbalance
     df = compute_imbalance(df)
     features["L1_Imbalance"] = df["L1_Imbalance"]
     features["L5_Imbalance"] = df["L5_Imbalance"]
 
-    # base: dynamics
     features = compute_dynamics(df, features, window=WINDOW)
 
-    # base: elasticity
     features = compute_elasticity(df, features)
 
-    # base: volatility
     features = compute_volatility(df, features, window=WINDOW)
 
-    # tao: weighted imbalance
     features["Weighted_Imbalance_decreasing"] = compute_weighted_imbalance(
         df, weights=[0.1, 0.1, 0.2, 0.2, 0.4], levels=5)
     features["Weighted_Imbalance_increasing"] = compute_weighted_imbalance(
@@ -140,20 +132,15 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     features["Weighted_Imbalance_constant"] = compute_weighted_imbalance(
         df, weights=[0.2, 0.2, 0.2, 0.2, 0.2], levels=5)
 
-    # poutre: event flow / rapidity
     features = compute_event_flow(df, features)
 
-    # hawkes: memory
     features = compute_hawkes(df, features)
 
-    # ofi: order flow imbalance
     features = compute_ofi(df, features)
 
-    # cleanup
     features.replace([np.inf, -np.inf], np.nan, inplace=True)
     features = features.fillna(0)
 
-    # Warmup trim
     if len(features) > WARMUP_STEPS:
         features = features.iloc[WARMUP_STEPS:].reset_index(drop=True)
 
@@ -161,7 +148,6 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     upper = features.quantile(0.999)
     features = features.clip(lower=lower, upper=upper, axis=1)
 
-    # Drop constant columns
     std_devs = features.std()
     drop_cols = std_devs[std_devs < 1e-9].index.tolist()
     if drop_cols:
@@ -187,10 +173,8 @@ def process_file(filepath: str) -> None:
     else:
         df = pd.read_csv(filepath)
 
-    # Fix column alignment
     df = fix_columns(df)
 
-    # Clean & filter market hours
     df = clean_lob(df)
     df = filter_market_hours(
         df, time_col=TIME_COL,
@@ -198,16 +182,13 @@ def process_file(filepath: str) -> None:
         market_close_hour=MARKET_CLOSE_HOUR,
     )
 
-    # Engineer features
     features = engineer_features(df)
 
-    # Align raw LOB with features (account for warmup trim)
     if len(df) > len(features):
         df_aligned = df.iloc[-len(features):].reset_index(drop=True)
     else:
         df_aligned = df.reset_index(drop=True)
 
-    # Assemble: xltime + raw LOB + features
     feat_cols = set(features.columns)
     lob_cols = [c for c in df_aligned.columns if c != TIME_COL and c not in feat_cols]
     result = pd.concat(
@@ -215,7 +196,6 @@ def process_file(filepath: str) -> None:
         axis=1,
     )
 
-    # Save
     result.to_parquet(out_path, index=False)
     logger.info("Saved %s  (%d rows, %d cols)", out_path, len(result), len(result.columns))
 

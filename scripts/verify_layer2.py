@@ -1,4 +1,4 @@
-"""
+﻿"""
 Layer 2: Unit-level functional checks.
 Run each component in isolation on synthetic data.
 """
@@ -22,9 +22,6 @@ def record(check_id, status, description, result, action="none required"):
             print(f"       Action: {action}")
 
 
-# ======================================================================
-# 2.1  Feature pipeline
-# ======================================================================
 def check_2_1():
     from detection.features.imbalance import compute_imbalance
     from detection.features.dynamics import compute_dynamics, compute_elasticity
@@ -38,7 +35,7 @@ def check_2_1():
     N = 500
     n_levels = 10
     df = pd.DataFrame()
-    df["xltime"] = np.linspace(0.375, 0.395, N)  # ~9:00-9:30
+    df["xltime"] = np.linspace(0.375, 0.395, N)
     base_bid = 100.0
     base_ask = 100.02
     for lv in range(1, n_levels + 1):
@@ -47,7 +44,6 @@ def check_2_1():
         df[f"bid-volume-{lv}"] = np.random.randint(10, 500, N).astype(float)
         df[f"ask-volume-{lv}"] = np.random.randint(10, 500, N).astype(float)
 
-    # Run feature pipeline steps
     compute_imbalance(df)
     features = pd.DataFrame(index=df.index)
     features["L1_Imbalance"] = df["L1_Imbalance"]
@@ -77,7 +73,6 @@ def check_2_1():
     record("2.1b", "PASS", "Feature column count",
            f"{n_cols} feature columns produced")
 
-    # Box-Cox scaler
     feat_clean = features.dropna().values.astype(np.float64)
     if feat_clean.shape[0] < 50:
         record("2.1c", "FAIL", "Box-Cox scaler fit", "Too few clean rows after dropna")
@@ -92,12 +87,9 @@ def check_2_1():
         record("2.1c", "FAIL", "Box-Cox fit_transform", str(e))
         return
 
-    # fit then transform should match fit_transform
     scaler2 = EmpiricalBoxCoxScaler()
     scaler2.fit(feat_clean)
     out_sep = scaler2.transform(feat_clean)
-    # Note: they use the same random state? Actually both are deterministic
-    # But the lambdas depend on the data only, so should match
     if np.allclose(out_ft, out_sep, atol=1e-5, equal_nan=True):
         record("2.1d", "PASS", "fit_transform == fit+transform",
                "Outputs match within 1e-5")
@@ -106,10 +98,8 @@ def check_2_1():
         record("2.1d", "WARNING", "fit_transform vs fit+transform",
                f"Max diff: {max_diff}")
 
-    # inverse_transform roundtrip
     try:
         recovered = scaler.inverse_transform(out_ft)
-        # Only check finite values — exclude near-zero originals
         mask = (np.isfinite(feat_clean) & np.isfinite(recovered)
                 & (np.abs(feat_clean) > 0.01))
         if mask.any():
@@ -118,7 +108,7 @@ def check_2_1():
                        (np.abs(feat_clean[mask]) + 1e-10)).max()
             median_rel = np.median(np.abs(feat_clean[mask] - recovered[mask]) /
                                    (np.abs(feat_clean[mask]) + 1e-10))
-            if median_rel < 0.05:  # 5% median relative error
+            if median_rel < 0.05:
                 record("2.1e", "PASS", "Box-Cox inverse_transform roundtrip",
                        f"Median rel err: {median_rel:.6f}, max rel err: {rel_err:.4f}")
             elif median_rel < 0.20:
@@ -135,9 +125,6 @@ def check_2_1():
         record("2.1e", "FAIL", "Box-Cox inverse_transform", str(e))
 
 
-# ======================================================================
-# 2.2  Sequence windowing
-# ======================================================================
 def check_2_2():
     from detection.data.loaders import create_sequences
     np.random.seed(42)
@@ -153,13 +140,10 @@ def check_2_2():
         record("2.2a", "FAIL", "Sequence window shapes",
                f"Expected ({expected_n},{seq_len},{D}), got {seqs.shape}")
 
-    # Verify first and last windows
-    # create_sequences: n_samples = T - seq_len, window[i] = data[i:i+seq_len]
     if np.allclose(seqs[0], data[:seq_len]) and np.allclose(seqs[-1], data[T-seq_len-1:T-1]):
         record("2.2b", "PASS", "First/last window content",
                "Windows correctly slice the data")
     else:
-        # Maybe the last window is data[-seq_len:]? Check that too
         if np.allclose(seqs[-1], data[-seq_len:]):
             record("2.2b", "PASS", "First/last window content",
                    "Windows correct (last = data[-seq_len:])")
@@ -167,9 +151,6 @@ def check_2_2():
             record("2.2b", "FAIL", "First/last window content", "Content mismatch")
 
 
-# ======================================================================
-# 2.3  OC-SVM dissimilarity score
-# ======================================================================
 def check_2_3():
     from detection.models.ocsvm import OCSVM
     np.random.seed(42)
@@ -182,7 +163,6 @@ def check_2_3():
     ocsvm = OCSVM(nu=0.05, n_components=50, sgd_epochs=200, batch_size=128)
     ocsvm.fit(X_train)
 
-    # dissimilarity_score: float array, no NaN, no binary
     ds = ocsvm.dissimilarity_score(X_test)
     if not isinstance(ds, np.ndarray):
         record("2.3a", "FAIL", "dissimilarity_score type", f"Got {type(ds)}")
@@ -201,7 +181,6 @@ def check_2_3():
     record("2.3a", "PASS", "dissimilarity_score output",
            f"Float array, {unique_vals} unique values, no NaN")
 
-    # fit_baseline_tau
     train_scores = ocsvm.dissimilarity_score(X_train)
     tau = OCSVM.fit_baseline_tau(train_scores, contamination=0.01)
     if not isinstance(tau, float):
@@ -212,7 +191,6 @@ def check_2_3():
         record("2.3b", "PASS", "fit_baseline_tau",
                f"tau = {tau:.6f}, in [{train_scores.min():.4f}, {train_scores.max():.4f}]")
 
-    # predict: binary values only
     preds = ocsvm.predict(np.vstack([X_test, X_outlier]), tau=tau)
     unique_preds = set(np.unique(preds))
     if unique_preds <= {1, -1}:
@@ -221,7 +199,6 @@ def check_2_3():
     else:
         record("2.3c", "FAIL", "predict output", f"Unexpected values: {unique_preds}")
 
-    # predict(tau=baseline) vs predict(tau=0) differ
     preds_zero = ocsvm.predict(np.vstack([X_test, X_outlier]), tau=0.0)
     preds_tau = ocsvm.predict(np.vstack([X_test, X_outlier]), tau=tau)
     n_diff = (preds_zero != preds_tau).sum()
@@ -233,9 +210,6 @@ def check_2_3():
                "No difference in predictions (may be edge case with synthetic data)")
 
 
-# ======================================================================
-# 2.4  Thresholding methods
-# ======================================================================
 def check_2_4():
     from detection.thresholds.pot import PeakOverThreshold
     from detection.thresholds.spot import StreamingPeakOverThreshold
@@ -244,13 +218,11 @@ def check_2_4():
 
     np.random.seed(42)
     N = 5000
-    # Mixture: mostly normal, some heavy-tailed outliers
     inlier = np.random.randn(N) * 1.0
     outlier_idx = np.random.choice(N, size=int(0.02 * N), replace=False)
     inlier[outlier_idx] += np.random.exponential(5.0, len(outlier_idx))
     scores = inlier
 
-    # POT
     try:
         z_pot, t_pot = PeakOverThreshold(scores, num_candidates=10,
                                          risk=1e-3, init_level=0.98)
@@ -263,7 +235,6 @@ def check_2_4():
     except Exception as e:
         record("2.4a", "FAIL", "POT threshold", traceback.format_exc())
 
-    # SPOT
     try:
         z_spot = StreamingPeakOverThreshold(
             scores, num_init=1000, num_candidates=10,
@@ -279,7 +250,6 @@ def check_2_4():
     except Exception as e:
         record("2.4b", "FAIL", "SPOT threshold", traceback.format_exc())
 
-    # DSPOT
     try:
         z_dspot = DriftStreamingPeakOverThreshold(
             scores, num_init=1000, depth=200, num_candidates=10,
@@ -294,7 +264,6 @@ def check_2_4():
     except Exception as e:
         record("2.4c", "FAIL", "DSPOT threshold", traceback.format_exc())
 
-    # RFDR
     try:
         rfdr = RollingFalseDiscoveryRate(window_size=500, alpha=0.05)
         detections = []
@@ -311,7 +280,6 @@ def check_2_4():
     except Exception as e:
         record("2.4d", "FAIL", "RFDR detection", traceback.format_exc())
 
-    # Compare orders of magnitude
     try:
         thresholds = {"POT": z_pot}
         if 'z_spot' in dir():
@@ -332,9 +300,6 @@ def check_2_4():
         pass
 
 
-# ======================================================================
-# 2.5  Spoofing gain
-# ======================================================================
 def check_2_5():
     from detection.spoofing.gain import compute_spoofing_gains_batch
 
@@ -375,13 +340,9 @@ def check_2_5():
         record("2.5b", "FAIL", "Spoofing gain (bid-side)", traceback.format_exc())
 
 
-# ======================================================================
-# 2.6  Integrated Gradients
-# ======================================================================
 def check_2_6():
     from detection.sensitivity.integrated_gradients import IntegratedGradients
 
-    # Tiny PNN-like model: input -> hidden -> (mu, sigma, alpha)
     class TinyPNN(torch.nn.Module):
         def __init__(self, d_in):
             super().__init__()
@@ -398,13 +359,12 @@ def check_2_6():
     model.eval()
 
     ig = IntegratedGradients(model)
-    x = torch.randn(1, 1, d_in)  # batch=1, seq=1, feat=d_in
+    x = torch.randn(1, 1, d_in)
     baseline = torch.zeros_like(x)
 
     def target_fn(output, inputs):
         return output.sum()
 
-    # Check completeness: sum(IG) ≈ f(x) - f(baseline)
     try:
         attrs = ig.attribute(x, baseline=baseline, target_func=target_fn, n_steps=300)
         with torch.no_grad():
@@ -425,15 +385,13 @@ def check_2_6():
     except Exception as e:
         record("2.6a", "FAIL", "IG completeness", traceback.format_exc())
 
-    # Monotonic improvement with more steps
     try:
         errors = []
         for n_steps in [10, 50, 100, 300]:
             a = ig.attribute(x, baseline=baseline, target_func=target_fn, n_steps=n_steps)
             err = abs(a.sum().item() - delta)
             errors.append((n_steps, err))
-        # Check generally decreasing (allow small fluctuations)
-        if errors[-1][1] <= errors[0][1] * 1.1:  # last <= first * 1.1
+        if errors[-1][1] <= errors[0][1] * 1.1:
             record("2.6b", "PASS", "IG step convergence",
                    ", ".join(f"n={n}: err={e:.6f}" for n, e in errors))
         else:
@@ -443,9 +401,6 @@ def check_2_6():
         record("2.6b", "FAIL", "IG step convergence", traceback.format_exc())
 
 
-# ======================================================================
-# 2.7  Grouped Occlusion
-# ======================================================================
 def check_2_7():
     from detection.sensitivity.occlusion import GroupedOcclusion
     from detection.models.ocsvm import OCSVM
@@ -453,7 +408,6 @@ def check_2_7():
     torch.manual_seed(42)
     np.random.seed(42)
 
-    # Create a minimal transformer-like encoder + OC-SVM detector
     seq_len, d_in = 5, 8
     feature_names = [
         "bid-price-1", "ask-price-1", "bid-volume-1", "ask-volume-1",
@@ -463,17 +417,15 @@ def check_2_7():
     class FakeTransformer(torch.nn.Module):
         def __init__(self):
             super().__init__()
-            self._dummy = torch.nn.Linear(1, 1)  # needs at least one param
+            self._dummy = torch.nn.Linear(1, 1)
         def get_representation(self, x):
-            # x: (B, seq_len, d_in) -> (B, 4)
-            return x.mean(dim=1)[:, :4]  # take first 4 features' mean
+            return x.mean(dim=1)[:, :4]
 
     class FakeDetector:
         def __init__(self):
             self.transformer = FakeTransformer()
             self.ocsvm = OCSVM(nu=0.1, n_components=20, sgd_epochs=100, batch_size=64)
             self.device = torch.device("cpu")
-            # Fit on some data
             train_reps = np.random.randn(200, 4).astype(np.float32)
             self.ocsvm.fit(train_reps)
 
@@ -494,22 +446,17 @@ def check_2_7():
         record("2.7", "FAIL", "Grouped Occlusion", traceback.format_exc())
 
 
-# ======================================================================
-# 2.8  Clustering (HDBSCAN)
-# ======================================================================
 def check_2_8():
     import hdbscan
 
     np.random.seed(42)
-    # Simulate 3-model normalized scores for 200 anomalies
     n_anom = 200
-    # Create 3 clusters in 3D score space
     X = np.vstack([
         np.random.randn(80, 3) * 0.3 + [0.8, 0.2, 0.1],
         np.random.randn(60, 3) * 0.3 + [0.2, 0.9, 0.3],
         np.random.randn(60, 3) * 0.3 + [0.1, 0.1, 0.8],
     ])
-    X = np.clip(X, 0, 1)  # MinMax-like
+    X = np.clip(X, 0, 1)
 
     try:
         hdb = hdbscan.HDBSCAN(min_cluster_size=10, min_samples=5)
@@ -526,33 +473,26 @@ def check_2_8():
         record("2.8", "FAIL", "HDBSCAN clustering", traceback.format_exc())
 
 
-# ======================================================================
-# 2.9  Jump analysis (basic statistical test)
-# ======================================================================
 def check_2_9():
     """Verify co-occurrence logic on a manual example."""
     np.random.seed(42)
     N = 1000
-    # Synthetic mid-price with 5 injected jumps at known positions
     prices = 100.0 + np.cumsum(np.random.randn(N) * 0.01)
     jump_positions = [100, 250, 500, 700, 900]
     for jp in jump_positions:
-        prices[jp:] += 0.5  # inject jump
+        prices[jp:] += 0.5
 
-    # Compute returns and detect jumps via simple threshold
     returns = np.diff(prices)
     jump_threshold = 0.3
     detected_jumps = np.abs(returns) > jump_threshold
 
-    # Synthetic anomaly flags: anomalies at some jump positions + noise
     anomaly_flags = np.zeros(N - 1, dtype=bool)
-    anomaly_flags[99] = True   # near jump at 100
-    anomaly_flags[249] = True  # near jump at 250
-    anomaly_flags[499] = True  # near jump at 500
-    anomaly_flags[10] = True   # noise (not near jump)
-    anomaly_flags[600] = True  # noise (not near jump)
+    anomaly_flags[99] = True
+    anomaly_flags[249] = True
+    anomaly_flags[499] = True
+    anomaly_flags[10] = True
+    anomaly_flags[600] = True
 
-    # Co-occurrence within window of 2
     window = 2
     n_cooccur = 0
     for jp in range(len(returns)):
@@ -562,7 +502,7 @@ def check_2_9():
             if anomaly_flags[start:end].any():
                 n_cooccur += 1
 
-    expected_cooccur = 3  # jumps at 100, 250, 500 have nearby anomalies
+    expected_cooccur = 3
     if n_cooccur == expected_cooccur:
         record("2.9a", "PASS", "Jump-anomaly co-occurrence",
                f"Found {n_cooccur} co-occurrences (expected {expected_cooccur})")
@@ -570,11 +510,9 @@ def check_2_9():
         record("2.9a", "WARNING", "Jump-anomaly co-occurrence",
                f"Found {n_cooccur}, expected {expected_cooccur}")
 
-    # Basic statistical test: is anomaly rate higher near jumps?
     from scipy.stats import fisher_exact
     n_jumps = detected_jumps.sum()
     n_anom = anomaly_flags.sum()
-    # Build contingency table
     near_jump_and_anom = n_cooccur
     near_jump_no_anom = n_jumps - n_cooccur
     no_jump_and_anom = (anomaly_flags & ~detected_jumps).sum()
@@ -589,9 +527,6 @@ def check_2_9():
         record("2.9b", "FAIL", "Fisher exact test", f"Invalid p-value: {pval}")
 
 
-# ======================================================================
-# Main
-# ======================================================================
 if __name__ == "__main__":
     checks = [
         ("2.1", check_2_1),
@@ -614,7 +549,6 @@ if __name__ == "__main__":
             record(check_id, "FAIL", f"Unexpected error in {check_id}",
                    traceback.format_exc())
 
-    # Summary
     print(f"\n{'='*60}")
     print("LAYER 2 SUMMARY")
     print(f"{'='*60}")

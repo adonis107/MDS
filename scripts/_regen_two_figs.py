@@ -1,4 +1,4 @@
-"""Quick standalone script to regenerate only fig_5_3_ta_vs_tb.pdf
+﻿"""Quick standalone script to regenerate only fig_5_3_ta_vs_tb.pdf
 and fig_5_8_price_path.pdf from existing data, without recomputing
 thresholds or running the full pipeline."""
 
@@ -43,7 +43,6 @@ def save_fig(fig, name):
     print(f"  saved {path}")
 
 
-# ── Figure 1: T_A vs T_B with inset zoom ──────────────────────────
 def regen_ta_vs_tb():
     stats_path = os.path.join("figures", "results", "threshold_comparison_stats.json")
     with open(stats_path) as f:
@@ -74,7 +73,6 @@ def regen_ta_vs_tb():
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
-    # ── Inset zoom on low-rate region ──
     low_ta = [v for v in all_ta if v <= 5]
     low_tb = [v for v in all_tb if v <= 5]
     if low_ta and low_tb:
@@ -107,7 +105,6 @@ def regen_ta_vs_tb():
     save_fig(fig, "fig_5_3_ta_vs_tb.pdf")
 
 
-# ── Figure 2: Price path ──────────────────────────────────────────
 SEQ_LENGTH = 25
 YEARS = ["2015", "2017"]
 MODEL_TYPES = ["transformer_ocsvm", "pnn", "prae"]
@@ -184,13 +181,11 @@ def analyze_price_path(year):
     nfp = extract_paths(nf_sample)
     print(f"    Got {len(fp)} flagged paths, {len(nfp)} non-flagged paths")
 
-    # Check for issues
     if len(fp) > 0:
         n_nan = np.isnan(fp).sum()
         n_inf = np.isinf(fp).sum()
         if n_nan > 0 or n_inf > 0:
             print(f"    WARNING: {n_nan} NaN, {n_inf} Inf in flagged paths")
-            # Replace non-finite with NaN for nanmean
             fp = np.where(np.isfinite(fp), fp, np.nan)
 
     if len(nfp) > 0:

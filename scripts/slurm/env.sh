@@ -1,8 +1,4 @@
-#!/bin/bash
-# ============================================================
-#  Common environment setup — sourced by all SLURM job scripts.
-#  NOT meant to be submitted directly.
-# ============================================================
+﻿#!/bin/bash
 
 set -euo pipefail
 

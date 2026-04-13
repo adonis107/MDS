@@ -1,30 +1,7 @@
-#!/bin/bash
-# ============================================================
-#  SLURM job — Post-hoc analysis
-#
-#  Runs inference caching, threshold sweep, and anomaly
-#  clustering after all testing jobs complete.
-#
-#  Submit via submit_all.sh or manually:
-#    sbatch scripts/slurm/posthoc.sh
-# ============================================================
+﻿#!/bin/bash
 
-#SBATCH --job-name=mds_posthoc
-#SBATCH --output=logs/%x_%j.out
-#SBATCH --error=logs/%x_%j.err
-#SBATCH --mail-type=END,FAIL
-#SBATCH --mail-user=adonis.jamal@student-cs.fr
 
-#SBATCH --partition=gpua100
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:1
-#SBATCH --mem=40G
-#SBATCH --time=20:00:00
 
-#SBATCH --export=ALL
-#SBATCH --propagate=NONE
 
 source "$HOME/MDS-PDMM/scripts/slurm/env.sh"
 

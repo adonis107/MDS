@@ -1,26 +1,7 @@
-#!/bin/bash
-# ============================================================
-#  Slurm job script — Anomaly Clustering
-#
-#  Submit with: sbatch scripts/submit_anomaly_clustering.sh
-# ============================================================
+﻿#!/bin/bash
 
-#SBATCH --job-name=mds_anom_clust
-#SBATCH --output=%x.o%j
-#SBATCH --error=%x.e%j
-#SBATCH --mail-type=ALL
-#SBATCH --mail-user=adonis.jamal@student-cs.fr
 
-#SBATCH --partition=gpua100
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:1
-#SBATCH --mem=40G
-#SBATCH --time=06:00:00
 
-#SBATCH --export=NONE
-#SBATCH --propagate=NONE
 
 set -euo pipefail
 

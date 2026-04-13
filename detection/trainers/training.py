@@ -1,4 +1,4 @@
-import math
+﻿import math
 
 import torch
 import torch.nn as nn
@@ -19,7 +19,6 @@ class Trainer:
         optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
 
         for epoch in range(self.epochs):
-            # Training
             model.train()
             train_loss = 0
             n_ok = 0
@@ -29,11 +28,6 @@ class Trainer:
                 if not torch.isfinite(loss):
                     continue
                 loss.backward()
-                # clip_grad_norm_ returns the total gradient norm.  If any
-                # gradient is NaN (e.g. from LayerNorm / softmax overflow),
-                # the returned norm is NaN and the clipping multiplies all
-                # gradients by NaN — corrupting every weight on .step().
-                # Detect this and skip the update entirely.
                 grad_norm = torch.nn.utils.clip_grad_norm_(
                     model.parameters(), max_norm=1.0)
                 if not math.isfinite(grad_norm):
@@ -43,7 +37,6 @@ class Trainer:
                 train_loss += loss.item()
                 n_ok += 1
 
-            # Validation
             model.eval()
             val_loss = 0
             with torch.no_grad():
@@ -64,7 +57,6 @@ class Trainer:
                     callback(monitored_loss, model)
                     if callback.early_stop:
                         print("Early stopping triggered")
-                        # Reload the best model checkpoint saved by EarlyStopping
                         import os
                         if os.path.exists(callback.path):
                             model.load_state_dict(torch.load(callback.path, map_location=self.device, weights_only=True))
@@ -79,7 +71,6 @@ def train_one_block(model, detector, train_loader, val_loader, model_type,
     import os
 
     if model_type == "transformer_ocsvm":
-        # Update the existing callback path to be job-specific
         for cb in detector.trainer.callbacks:
             if isinstance(cb, EarlyStopping):
                 cb.path = os.path.join(results_dir, f"{model_type}_checkpoint.pth")
@@ -92,7 +83,6 @@ def train_one_block(model, detector, train_loader, val_loader, model_type,
         os.remove(ckpt_path)
     early_stop = EarlyStopping(patience=patience, verbose=False, path=ckpt_path)
 
-    # All models: monitor val_loss for early stopping.
     monitor = 'val_loss'
     trainer = Trainer(epochs=epochs, learning_rate=lr,
                       callbacks=[early_stop], device=str(device),

@@ -1,4 +1,4 @@
-"""Merge chunked test outputs and run full post-hoc analysis.
+﻿"""Merge chunked test outputs and run full post-hoc analysis.
 
 After running test.py with MDS_NUM_CHUNKS > 1, each chunk saves its
 scores/preds/meta to test_output/chunk_X/.  This script loads all
@@ -30,7 +30,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("test_merge")
 
-# ── Configuration (must match test.py) ─────────────────────────
 TRAIN_YEAR = os.environ.get("MDS_YEAR", "2015")
 NUM_CHUNKS = int(os.environ.get("MDS_NUM_CHUNKS", "4"))
 DATA_DIR = os.path.join("data", "processed", "TOTF.PA-book")
@@ -53,7 +52,6 @@ PERIODS = {
     "american_open":   (15.5, 17.5),
 }
 
-# ── Build split labels (same logic as test.py) ────────────────
 NUM_HOLDOUT = 12
 YEAR_FILES = sorted(glob.glob(os.path.join(DATA_DIR, f"{TRAIN_YEAR}*.parquet")))
 NUM_TRAIN_DAYS = len(YEAR_FILES) - NUM_HOLDOUT
@@ -63,7 +61,6 @@ TEST_DISTAL_FILES = YEAR_FILES[NUM_TRAIN_DAYS + 9:]
 _proximate_set = set(os.path.basename(f) for f in TEST_PROXIMATE_FILES)
 _distal_set = set(os.path.basename(f) for f in TEST_DISTAL_FILES)
 
-# ── Load and merge chunks ─────────────────────────────────────
 logger.info("Merging %d chunks from %s", NUM_CHUNKS, OUTPUT_DIR)
 
 all_scores = {mt: [] for mt in MODEL_TYPES}
@@ -90,12 +87,10 @@ for ci in range(NUM_CHUNKS):
     day_names.extend(cmeta["day_names"])
     day_split_labels.extend(cmeta["day_split_labels"])
 
-    # Rebase day_boundaries from this chunk onto the global offset
     offset = day_boundaries[-1]
     for b in cmeta["day_boundaries"][1:]:
         day_boundaries.append(offset + b)
 
-    # Reconstruct full paths for RCA streaming
     for dn in cmeta["day_names"]:
         processed_test_files.append(os.path.join(DATA_DIR, dn))
 
@@ -115,7 +110,6 @@ for mt in MODEL_TYPES:
     n_anom = all_preds[mt].sum()
     logger.info("  %s: %d anomalies (%.2f%%)", mt, n_anom, 100 * n_anom / total_samples)
 
-# Save merged scores/preds
 for mt in MODEL_TYPES:
     np.save(os.path.join(OUTPUT_DIR, f"{mt}_scores.npy"), all_scores[mt])
     np.save(os.path.join(OUTPUT_DIR, f"{mt}_preds.npy"), all_preds[mt])
@@ -134,8 +128,6 @@ meta = {
 with open(os.path.join(OUTPUT_DIR, "test_meta.json"), "w") as f:
     json.dump(meta, f, indent=2)
 
-# Post-hoc analysis
-# 4. Per-period anomaly rates
 rows = []
 for mt in MODEL_TYPES:
     preds = all_preds[mt]
@@ -158,7 +150,6 @@ period_df = pd.DataFrame(rows)
 period_df.to_csv(os.path.join(OUTPUT_DIR, "anomaly_rates_by_period.csv"), index=False)
 logger.info("Saved anomaly rates by period.")
 
-# 5. Per-day summary
 day_rows = []
 for day_idx, day_name in enumerate(day_names):
     lo = day_boundaries[day_idx]
@@ -184,7 +175,6 @@ day_df = pd.DataFrame(day_rows)
 day_df.to_csv(os.path.join(OUTPUT_DIR, "anomaly_rates_by_day.csv"), index=False)
 logger.info("Saved anomaly rates by day.")
 
-# 6. Consensus analysis
 n_total = min(len(all_preds[mt]) for mt in MODEL_TYPES)
 pred_matrix = np.column_stack([all_preds[mt][:n_total] for mt in MODEL_TYPES])
 n_models_flagged = pred_matrix.sum(axis=1)
@@ -202,7 +192,6 @@ consensus_df = pd.DataFrame(consensus_rows)
 consensus_df.to_csv(os.path.join(OUTPUT_DIR, "consensus_agreement.csv"), index=False)
 logger.info("Saved consensus agreement.")
 
-# 7. Root cause analysis (top features per model) - streaming
 rca_rows = []
 
 for mt in MODEL_TYPES:
@@ -307,7 +296,6 @@ rca_df = pd.DataFrame(rca_rows)
 rca_df.to_csv(os.path.join(OUTPUT_DIR, "root_cause_analysis.csv"), index=False)
 logger.info("Saved root cause analysis.")
 
-# 8. Per-split metrics and proximity comparison
 split_rows = []
 for mt in MODEL_TYPES:
     for split_name in ["test_proximate", "test_distal"]:
@@ -350,7 +338,6 @@ split_df = pd.DataFrame(split_rows)
 split_df.to_csv(os.path.join(OUTPUT_DIR, "metrics_by_split.csv"), index=False)
 logger.info("Saved per-split metrics.")
 
-# 9. Welch t-test: proximate vs. distal
 proximity_rows = []
 for mt in MODEL_TYPES:
     rates_A = []
@@ -411,7 +398,6 @@ logger.info("Saved proximity comparison (Welch t-test, T_A vs T_B).")
 logger.info("NOTE: small sample sizes (n_A=%d, n_B=%d) limit statistical power.",
             len(TEST_PROXIMATE_FILES), len(TEST_DISTAL_FILES))
 
-# Summary
 logger.info("=" * 70)
 logger.info("All merged results saved to %s", OUTPUT_DIR)
 logger.info("Files:")

@@ -1,4 +1,4 @@
-"""
+﻿"""
 Generate all figures for Section 5.2 (Anomaly Detection on Test Data).
 
 Reads pre-computed CSVs and NPY arrays from results/<year>/test_output/.
@@ -17,15 +17,9 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 from matplotlib.patches import Patch
 
-# ────────────────────────────────────────────────────────────────────
-# Output directory
-# ────────────────────────────────────────────────────────────────────
 OUT_DIR = os.path.join("figures", "results")
 os.makedirs(OUT_DIR, exist_ok=True)
 
-# ────────────────────────────────────────────────────────────────────
-# Plot style (matches Section 5.1)
-# ────────────────────────────────────────────────────────────────────
 plt.rcParams.update({
     "font.size": 10,
     "axes.titlesize": 11,
@@ -49,7 +43,7 @@ MODEL_COLORS = {
     "prae": GREEN,
 }
 MODEL_LABELS = {
-    "transformer_ocsvm": "TF–OC-SVM",
+    "transformer_ocsvm": "TFâ€“OC-SVM",
     "pnn": "PNN",
     "prae": "PRAE",
 }
@@ -73,9 +67,6 @@ def save_fig(fig, name):
     print(f"  saved {path}")
 
 
-# ────────────────────────────────────────────────────────────────────
-# Figure 1: Anomaly rate by period (grouped bar chart)
-# ────────────────────────────────────────────────────────────────────
 def fig_anomaly_rates_by_period(year="2015"):
     df = pd.read_csv(os.path.join(data_dir(year), "anomaly_rates_by_period.csv"))
     models = ["transformer_ocsvm", "pnn", "prae"]
@@ -105,9 +96,6 @@ def fig_anomaly_rates_by_period(year="2015"):
     save_fig(fig, f"anomaly_rates_by_period_{year}.pdf")
 
 
-# ────────────────────────────────────────────────────────────────────
-# Figure 2: Daily anomaly rate line chart
-# ────────────────────────────────────────────────────────────────────
 def fig_daily_anomaly_rates(year="2015"):
     df = pd.read_csv(os.path.join(data_dir(year), "anomaly_rates_by_day.csv"))
     models = ["transformer_ocsvm", "pnn", "prae"]
@@ -124,7 +112,6 @@ def fig_daily_anomaly_rates(year="2015"):
             "test_distal": PURPLE,
         })
         ax.scatter(sub["date"], sub["rate_pct"], s=4, c=colors, alpha=0.7, rasterized=True)
-        # rolling mean over out_of_sample
         oos = sub[sub["split"] == "out_of_sample"].set_index("date")["rate_pct"]
         rolling = oos.rolling(10, min_periods=3).mean()
         ax.plot(rolling.index, rolling.values, color=MODEL_COLORS[m], linewidth=1.2, label="10-day MA")
@@ -139,7 +126,6 @@ def fig_daily_anomaly_rates(year="2015"):
     fig.suptitle(f"Daily anomaly rate across test period ({year} model)", fontsize=11, y=1.01)
     fig.tight_layout()
 
-    # add legend for split colours
     handles = [
         Patch(facecolor="gray", label="Out-of-sample"),
         Patch(facecolor=RED, label=r"$\mathcal{T}_A$ (proximate)"),
@@ -149,34 +135,26 @@ def fig_daily_anomaly_rates(year="2015"):
     save_fig(fig, f"daily_anomaly_rates_{year}.pdf")
 
 
-# ────────────────────────────────────────────────────────────────────
-# Figure 3: Score distributions (TF-OC-SVM and PRAE only; PNN has no scores)
-# ────────────────────────────────────────────────────────────────────
 def fig_score_distributions(year="2015"):
     fig, axes = plt.subplots(1, 2, figsize=(8, 3.2))
 
-    # TF-OC-SVM
     scores = np.load(os.path.join(data_dir(year), "transformer_ocsvm_scores.npy"))
     preds  = np.load(os.path.join(data_dir(year), "transformer_ocsvm_preds.npy"))
-    # subsample for histogramming
     rng = np.random.default_rng(42)
     idx = rng.choice(len(scores), size=min(500_000, len(scores)), replace=False)
     ax = axes[0]
     ax.hist(scores[idx], bins=200, color=BLUE, alpha=0.7, density=True, rasterized=True)
-    # mark threshold = 0
     ax.axvline(0, color=RED, linestyle="--", linewidth=1, label="Threshold (0)")
     ax.set_xlabel("OC-SVM decision score")
     ax.set_ylabel("Density")
-    ax.set_title("TF–OC-SVM score distribution")
+    ax.set_title("TFâ€“OC-SVM score distribution")
     ax.legend(frameon=False, fontsize=7)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
-    # PRAE
     scores_prae = np.load(os.path.join(data_dir(year), "prae_scores.npy"))
     preds_prae  = np.load(os.path.join(data_dir(year), "prae_preds.npy"))
     ax = axes[1]
-    # clip extreme values for visualisation
     clipped = np.clip(scores_prae[idx], 0, np.percentile(scores_prae[idx], 99.5))
     ax.hist(clipped, bins=200, color=GREEN, alpha=0.7, density=True, rasterized=True)
     ax.set_xlabel("PRAE reconstruction score")
@@ -189,9 +167,6 @@ def fig_score_distributions(year="2015"):
     save_fig(fig, f"score_distributions_{year}.pdf")
 
 
-# ────────────────────────────────────────────────────────────────────
-# Figure 4: Proximate vs. distal anomaly rates (bar chart)
-# ────────────────────────────────────────────────────────────────────
 def fig_proximity_comparison(year="2015"):
     df = pd.read_csv(os.path.join(data_dir(year), "metrics_by_split.csv"))
     models = ["transformer_ocsvm", "pnn", "prae"]
@@ -223,9 +198,6 @@ def fig_proximity_comparison(year="2015"):
     save_fig(fig, f"proximity_comparison_{year}.pdf")
 
 
-# ────────────────────────────────────────────────────────────────────
-# Figure 5: Consensus agreement (stacked bar / pie)
-# ────────────────────────────────────────────────────────────────────
 def fig_consensus_agreement(year="2015"):
     df = pd.read_csv(os.path.join(data_dir(year), "consensus_agreement.csv"))
     labels = [f"{int(row.n_models_agreeing)} model{'s' if row.n_models_agreeing != 1 else ''}"
@@ -236,14 +208,12 @@ def fig_consensus_agreement(year="2015"):
     fig, axes = plt.subplots(1, 2, figsize=(8, 3.5),
                              gridspec_kw={"width_ratios": [1, 1.8]})
 
-    # Pie chart (all)
     ax = axes[0]
     ax.pie(df["pct"], labels=labels, colors=colors_list,
            autopct=lambda p: f"{p:.2f}%" if p > 0.001 else "",
            startangle=90, textprops={"fontsize": 8})
     ax.set_title("Overall consensus", fontsize=10)
 
-    # Bar chart (anomalies only, i.e. ≥1 model)
     ax = axes[1]
     anom = df[df["n_models_agreeing"] > 0].copy()
     bars = ax.barh(
@@ -265,9 +235,6 @@ def fig_consensus_agreement(year="2015"):
     save_fig(fig, f"consensus_agreement_{year}.pdf")
 
 
-# ────────────────────────────────────────────────────────────────────
-# Figure 6: Score time series for a representative test day
-# ────────────────────────────────────────────────────────────────────
 def fig_score_timeseries(year="2015"):
     """Plot TF-OC-SVM and PRAE score time series for one proximate test day."""
     with open(os.path.join(data_dir(year), "test_meta.json")) as f:
@@ -277,7 +244,6 @@ def fig_score_timeseries(year="2015"):
     day_labels = meta["day_split_labels"]
     boundaries = meta["day_boundaries"]
 
-    # pick first proximate day
     prox_indices = [i for i, l in enumerate(day_labels) if l == "test_proximate"]
     chosen = prox_indices[0]
     start = boundaries[chosen]
@@ -296,14 +262,12 @@ def fig_score_timeseries(year="2015"):
                           mmap_mode="r")[start:end]
 
     n = len(tf_scores)
-    # subsample for plotting (every kth)
     k = max(1, n // 10_000)
     idx = np.arange(0, n, k)
-    x = idx / n  # normalised [0,1]
+    x = idx / n
 
     fig, axes = plt.subplots(3, 1, figsize=(10, 6), sharex=True)
 
-    # TF-OC-SVM
     ax = axes[0]
     ax.plot(x, np.array(tf_scores)[idx], color=BLUE, linewidth=0.4, alpha=0.8, rasterized=True)
     anom_mask = np.array(tf_preds)[idx] == 1
@@ -312,23 +276,21 @@ def fig_score_timeseries(year="2015"):
                    color=RED, s=3, zorder=3, rasterized=True, label="Anomaly")
     ax.axhline(0, color="gray", linestyle="--", linewidth=0.7)
     ax.set_ylabel("Decision score")
-    ax.set_title(f"TF–OC-SVM — {day_str}", fontsize=10)
+    ax.set_title(f"TFâ€“OC-SVM â€” {day_str}", fontsize=10)
     ax.legend(frameon=False, fontsize=7, loc="upper right")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
-    # PNN (binary only)
     ax = axes[1]
     pnn_sub = np.array(pnn_preds)[idx]
     ax.fill_between(x, 0, pnn_sub, color=ORANGE, alpha=0.5, step="mid", rasterized=True)
     ax.set_ylabel("Prediction")
     ax.set_yticks([0, 1])
     ax.set_yticklabels(["Normal", "Anomaly"])
-    ax.set_title(f"PNN — {day_str}", fontsize=10)
+    ax.set_title(f"PNN â€” {day_str}", fontsize=10)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
-    # PRAE
     ax = axes[2]
     prae_sub = np.array(prae_scores)[idx]
     ax.plot(x, prae_sub, color=GREEN, linewidth=0.4, alpha=0.8, rasterized=True)
@@ -338,7 +300,7 @@ def fig_score_timeseries(year="2015"):
                    color=RED, s=3, zorder=3, rasterized=True, label="Anomaly")
     ax.set_ylabel("Reconstruction score")
     ax.set_xlabel("Normalised time (0 = open, 1 = close)")
-    ax.set_title(f"PRAE — {day_str}", fontsize=10)
+    ax.set_title(f"PRAE â€” {day_str}", fontsize=10)
     ax.legend(frameon=False, fontsize=7, loc="upper right")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -348,15 +310,11 @@ def fig_score_timeseries(year="2015"):
     save_fig(fig, f"score_timeseries_{year}.pdf")
 
 
-# ────────────────────────────────────────────────────────────────────
-# Figure 7: Root-cause top features (horizontal bar chart)
-# ────────────────────────────────────────────────────────────────────
 def fig_root_cause(year="2015"):
     df = pd.read_csv(os.path.join(data_dir(year), "root_cause_analysis.csv"))
     models = ["transformer_ocsvm", "pnn", "prae"]
     analyses = df["analysis"].unique()
 
-    # Use top10pct_mean for a more representative picture
     analysis = "top10pct_mean" if "top10pct_mean" in analyses else analyses[0]
 
     fig, axes = plt.subplots(1, 3, figsize=(12, 4))
@@ -377,9 +335,6 @@ def fig_root_cause(year="2015"):
     save_fig(fig, f"root_cause_features_{year}.pdf")
 
 
-# ────────────────────────────────────────────────────────────────────
-# Figure 8: Anomaly rate heatmap (model × split)
-# ────────────────────────────────────────────────────────────────────
 def fig_rate_heatmap(year="2015"):
     df = pd.read_csv(os.path.join(data_dir(year), "anomaly_rates_by_day.csv"))
     models = ["transformer_ocsvm", "pnn", "prae"]
@@ -410,9 +365,6 @@ def fig_rate_heatmap(year="2015"):
     save_fig(fig, f"rate_heatmap_{year}.pdf")
 
 
-# ────────────────────────────────────────────────────────────────────
-# Main
-# ────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("Generating Section 5.2 figures for both years...")
     for year in YEARS:

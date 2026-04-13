@@ -1,4 +1,4 @@
-import numpy as np
+﻿import numpy as np
 import pandas as pd
 import re
 import torch
@@ -16,25 +16,20 @@ def parse_feature_attributes(feature_name):
     """
     name_lower = feature_name.lower()
     
-    # Side
     if 'bid' in name_lower: side = 'bid'
     elif 'ask' in name_lower: side = 'ask'
     else: side = 'neutral'
     
-    # Level
     level = None
     
-    # Pattern for features
     lob_match = re.search(r'(bid|ask)[-_]?(price|volume)[-_]?(\d+)', name_lower)
     if lob_match:
         level = int(lob_match.group(3))
     
-    # Pattern for OFI features
     ofi_match = re.search(r'level[-_]?(\d+)', name_lower)
     if ofi_match:
         level = int(ofi_match.group(1))
     
-    # Determine feature type
     if 'order_flow_imbalance' in name_lower or name_lower.startswith('ofi'):
         ftype = 'ofi'
     elif 'hawkes' in name_lower:
@@ -100,7 +95,6 @@ def group_features(feature_names, group_by='side'):
     for idx, fname in enumerate(feature_names):
         attrs = parse_feature_attributes(fname)
         
-        # Build group key based on grouping criterion
         if group_by == 'side':
             key = attrs['side']
         elif group_by == 'level':
@@ -146,57 +140,44 @@ def GroupedOcclusion(detector, x_seq, feature_names, group_by='side', baseline_m
         pd.DataFrame: Group importance sorted by contribution to the anomaly.
         dict: Dictionary mapping group names to their constituent features.
     """
-    # Set transformer to eval mode
     detector.transformer.eval()
     
-    # Setup Data
     if x_seq.dim() != 3 or x_seq.size(0) != 1:
         raise ValueError(f"Input must be (1, Seq, Feat), got {x_seq.shape}")
     
-    # Get feature groups
     groups = group_features(feature_names, group_by)
     group_names = list(groups.keys())
     num_groups = len(group_names)
     
-    # Determine mask value
     if baseline_mode == 'mean':
         baseline_values = x_seq.mean(dim=1, keepdim=True)
     else:
         baseline_values = torch.zeros_like(x_seq[:, 0:1, :])
     
-    # Create batch: original + one for each group
     batch_tensor = x_seq.repeat(num_groups + 1, 1, 1).clone()
     
-    # Occlusion by group
     for g_idx, group_name in enumerate(group_names):
-        feature_indices = [f[1] for f in groups[group_name]]  # Get indices from tuples
+        feature_indices = [f[1] for f in groups[group_name]]
         for feat_idx in feature_indices:
-            # Set all features in the group to baseline
             if baseline_mode == 'mean':
                 batch_tensor[g_idx + 1, :, feat_idx] = baseline_values[0, 0, feat_idx]
             else:
                 batch_tensor[g_idx + 1, :, feat_idx] = 0.0
     
-    # Batch Inference
-    # Process through transformer to get latent representations
     with torch.no_grad():
         batch_tensor = batch_tensor.to(detector.device)
         latent_representations = detector.transformer.get_representation(batch_tensor)
         
-        # Get anomaly scores via dissimilarity_score (Poutré et al. 2024, §3.5)
         scores = detector.ocsvm.dissimilarity_score(latent_representations)
     
-    # Importance
     original_score = scores[0]
     occluded_scores = scores[1:]
     
     importances = original_score - occluded_scores
     
-    # Feature list strings for each group
     feature_lists = {g: [f[0] for f in groups[g]] for g in group_names}
     feature_counts = [len(groups[g]) for g in group_names]
     
-    # Format Results
     importance_df = pd.DataFrame({
         'Group': group_names,
         'Importance': importances,

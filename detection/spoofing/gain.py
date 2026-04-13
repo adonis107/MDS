@@ -1,18 +1,17 @@
-import numpy as np
+﻿import numpy as np
 from scipy.special import erf
 from scipy.stats import skewnorm
 import torch
 
 
-# ── Vectorized helpers (fast, operate on entire arrays) ──────────────────
 
 def _standard_normal_cdf(t):
-    """Φ(t) — standard normal CDF, vectorized via erf."""
+    """Î¦(t) â€” standard normal CDF, vectorized via erf."""
     return 0.5 * (1.0 + erf(t / np.sqrt(2.0)))
 
 
 def _standard_normal_pdf(t):
-    """φ(t) — standard normal PDF, vectorized."""
+    """Ï†(t) â€” standard normal PDF, vectorized."""
     return (1.0 / np.sqrt(2.0 * np.pi)) * np.exp(-0.5 * t ** 2)
 
 
@@ -74,25 +73,23 @@ def calculate_expected_cost(mu, sigma, alpha, spread, delta_a, delta_b, Q, q,
         sigma = sigma.detach().cpu().numpy()
         alpha = alpha.detach().cpu().numpy()
 
-    # Ensure numpy arrays for vectorised path
     mu    = np.asarray(mu, dtype=np.float64)
     sigma = np.asarray(sigma, dtype=np.float64)
     alpha = np.asarray(alpha, dtype=np.float64)
     spread = np.asarray(spread, dtype=np.float64)
 
-    thresh_a = delta_a + 0.5 * spread   # Ask side
-    thresh_b = -(delta_b + 0.5 * spread) # Bid side
+    thresh_a = delta_a + 0.5 * spread
+    thresh_b = -(delta_b + 0.5 * spread)
 
     if p_bid is None:
         p_bid = np.ones_like(spread)
     if p_ask is None:
         p_ask = np.ones_like(spread) + spread
 
-    # Pre-compute CDFs once (most expensive step)
     F_a = skewed_gaussian_cdf(thresh_a, mu, sigma, alpha)
     F_b = skewed_gaussian_cdf(thresh_b, mu, sigma, alpha)
 
-    if side == 'ask':  # Spoofer wants to sell
+    if side == 'ask':
         P_ask_filled = 1.0 - F_a
         P_bid_filled = F_b
 
@@ -106,7 +103,7 @@ def calculate_expected_cost(mu, sigma, alpha, spread, delta_a, delta_b, Q, q,
         cost_3 = -(1 - P_ask_filled) * (1 - epsilon_minus) * q * (p_bid + E_dp_ask_nf)
         cost_4 = -P_bid_filled * (1 - epsilon_minus) * Q * (p_bid + E_dp_bid_f)
 
-    else:  # side == 'bid', Spoofer wants to buy
+    else:
         P_bid_filled = F_b
         P_ask_filled = 1.0 - F_a
 
@@ -133,15 +130,15 @@ def compute_spoofing_gains_batch(mu_arr, sigma_arr, alpha_arr, spread_arr,
     processes the full array in one shot.
 
     Args:
-        mu_arr, sigma_arr, alpha_arr: 1-D arrays (N,) — PNN output params.
-        spread_arr: 1-D array (N,) — bid-ask spread per sample.
-        delta_a, delta_b: Scalars — order distances.
-        Q, q: Scalars — spoof / genuine order sizes.
+        mu_arr, sigma_arr, alpha_arr: 1-D arrays (N,) â€” PNN output params.
+        spread_arr: 1-D array (N,) â€” bid-ask spread per sample.
+        delta_a, delta_b: Scalars â€” order distances.
+        Q, q: Scalars â€” spoof / genuine order sizes.
         fees: dict with 'maker' and 'taker' keys.
         side: 'ask' or 'bid'.
 
     Returns:
-        gains: 1-D array (N,) — spoofing gain per sample.
+        gains: 1-D array (N,) â€” spoofing gain per sample.
     """
     mu    = np.asarray(mu_arr,    dtype=np.float64)
     sigma = np.asarray(sigma_arr, dtype=np.float64)

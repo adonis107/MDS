@@ -1,4 +1,4 @@
-"""
+﻿"""
 Generate all diagnostic figures for Section 5.1 (Model Diagnostics).
 
 Outputs PDF figures to figures/diagnostics/ for both training years (2015, 2017).
@@ -19,9 +19,8 @@ from scipy.special import erf, owens_t
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-# fast skew-normal CDF using Owen's T (1000x vs scipy)
 def _fast_skewnorm_cdf(x, mu, sigma, alpha):
-    """F(x; mu, sigma, alpha) = Φ(z) - 2·T(z, alpha), z=(x-mu)/sigma."""
+    """F(x; mu, sigma, alpha) = Î¦(z) - 2Â·T(z, alpha), z=(x-mu)/sigma."""
     z = (np.asarray(x, dtype=np.float64) - mu) / sigma
     phi_z = 0.5 * (1.0 + erf(z / np.sqrt(2.0)))
     return phi_z - 2.0 * owens_t(z, np.asarray(alpha, dtype=np.float64))
@@ -39,7 +38,6 @@ from sklearn.decomposition import PCA
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Paths
 DATA_DIR = os.path.join("data", "processed", "TOTF.PA-book")
 OUT_DIR = os.path.join("figures", "diagnostics")
 os.makedirs(OUT_DIR, exist_ok=True)
@@ -55,7 +53,6 @@ LOB_COLUMNS = [
 FILES = sorted(glob.glob(os.path.join(DATA_DIR, "*.parquet")))
 TEST_FILES = [FILES[22], FILES[23], FILES[24], FILES[25], FILES[26]]
 
-# Plot style
 plt.rcParams.update({
     "font.size": 10,
     "axes.titlesize": 11,
@@ -104,19 +101,15 @@ def prepare_sequences(file_path, feat_names, scaler):
     return df, features, seqs
 
 
-# ==============================================================================
-# TF-OC-SVM Diagnostics
-# ==============================================================================
 def generate_tfocsvm_diagnostics(year):
     print(f"\n{'='*60}")
-    print(f"TF-OC-SVM Diagnostics — {year}")
+    print(f"TF-OC-SVM Diagnostics â€” {year}")
     print(f"{'='*60}")
     results_dir = os.path.join("results", str(year))
 
     feat_names, scaler = load_features_and_scaler(results_dir, "transformer_ocsvm")
     num_features = len(feat_names)
 
-    # Load models
     transformer = BottleneckTransformer(
         num_features=num_features, model_dim=128, num_heads=8,
         num_layers=6, representation_dim=128, sequence_length=SEQ_LENGTH,
@@ -131,7 +124,6 @@ def generate_tfocsvm_diagnostics(year):
         os.path.join(results_dir, "transformer_ocsvm_detector.pth"),
         map_location=DEVICE, weights_only=False)
 
-    # Encode first test day
     _, _, seqs = prepare_sequences(TEST_FILES[0], feat_names, scaler)
     all_z = []
     with torch.no_grad():
@@ -144,7 +136,6 @@ def generate_tfocsvm_diagnostics(year):
     z_np = z_all.numpy()
     print(f"  Encoded {z_all.shape[0]} sequences, latent dim {z_all.shape[1]}")
 
-    # 1. Latent space statistics
     dim_var = z_np.var(axis=0)
     dim_mean = z_np.mean(axis=0)
 
@@ -167,7 +158,6 @@ def generate_tfocsvm_diagnostics(year):
     plt.tight_layout()
     save_fig(fig, f"tfocsvm_latent_statistics_{year}.pdf")
 
-    # 2. Kernel calibration
     gamma = ocsvm._gamma
     n_sample = min(1000, z_all.shape[0])
     idx = np.random.choice(z_all.shape[0], n_sample, replace=False)
@@ -192,7 +182,7 @@ def generate_tfocsvm_diagnostics(year):
     axes[0].legend()
 
     axes[1].hist(dist2_pairs, bins=100, color=ORANGE, edgecolor="white", alpha=0.85, density=True)
-    axes[1].axvline(expected_dist2, color=RED, linestyle="--", label=f"E[d²] = {expected_dist2:.1f}")
+    axes[1].axvline(expected_dist2, color=RED, linestyle="--", label=f"E[dÂ²] = {expected_dist2:.1f}")
     axes[1].axvline(np.median(dist2_pairs), color=GREEN, linestyle="--", label=f"Median = {np.median(dist2_pairs):.1f}")
     axes[1].set_xlabel(r"$\|z_i - z_j\|^2$")
     axes[1].set_ylabel("Density")
@@ -201,7 +191,6 @@ def generate_tfocsvm_diagnostics(year):
     plt.tight_layout()
     save_fig(fig, f"tfocsvm_kernel_calibration_{year}.pdf")
 
-    # 3. Nyström eigenvalue spectrum
     landmarks = ocsvm._landmarks
     K_CC = ocsvm._rbf_kernel(landmarks, landmarks)
     K_CC_np = K_CC.cpu().numpy()
@@ -231,7 +220,6 @@ def generate_tfocsvm_diagnostics(year):
     plt.tight_layout()
     save_fig(fig, f"tfocsvm_nystrom_spectrum_{year}.pdf")
 
-    # 4. Decision function & dissimilarity
     decision_vals = ocsvm.decision_function(z_np)
     dissimilarity = -decision_vals
     n_outliers = int((decision_vals < 0).sum())
@@ -253,7 +241,6 @@ def generate_tfocsvm_diagnostics(year):
     plt.tight_layout()
     save_fig(fig, f"tfocsvm_decision_function_{year}.pdf")
 
-    # 5. Reconstruction error vs dissimilarity
     rec_errors = []
     with torch.no_grad():
         for start in range(0, len(seqs), BATCH_SIZE):
@@ -275,7 +262,6 @@ def generate_tfocsvm_diagnostics(year):
     plt.tight_layout()
     save_fig(fig, f"tfocsvm_rec_vs_dissimilarity_{year}.pdf")
 
-    # 6. Latent PCA
     pca = PCA(n_components=2)
     z_2d = pca.fit_transform(z_np)
 
@@ -301,7 +287,6 @@ def generate_tfocsvm_diagnostics(year):
     plt.tight_layout()
     save_fig(fig, f"tfocsvm_latent_pca_{year}.pdf")
 
-    # 7. Baseline τ on training data
     year_files = sorted(glob.glob(os.path.join(DATA_DIR, f"{year}*.parquet")))
     train_files = year_files[:len(year_files) - NUM_HOLDOUT]
 
@@ -340,9 +325,8 @@ def generate_tfocsvm_diagnostics(year):
     else:
         all_train = np.array([0.0])
         tau = 0.0
-    print(f"  τ = {tau:.6f}, n_train_scores = {len(all_train)}")
+    print(f"  Ï„ = {tau:.6f}, n_train_scores = {len(all_train)}")
 
-    # Test scores across all days
     all_test_scores = []
     for fpath in TEST_FILES:
         _, _, seqs_day = prepare_sequences(fpath, feat_names, scaler)
@@ -392,7 +376,6 @@ def generate_tfocsvm_diagnostics(year):
     plt.tight_layout()
     save_fig(fig, f"tfocsvm_tau_analysis_{year}.pdf")
 
-    # Return key numbers for LaTeX
     return {
         "gamma": ocsvm._gamma,
         "rho": float(ocsvm._rho.item()),
@@ -417,12 +400,9 @@ def generate_tfocsvm_diagnostics(year):
     }
 
 
-# ==============================================================================
-# PNN Diagnostics
-# ==============================================================================
 def generate_pnn_diagnostics(year):
     print(f"\n{'='*60}")
-    print(f"PNN Diagnostics — {year}")
+    print(f"PNN Diagnostics â€” {year}")
     print(f"{'='*60}")
     results_dir = os.path.join("results", str(year))
     feat_names, scaler = load_features_and_scaler(results_dir, "pnn")
@@ -440,7 +420,6 @@ def generate_pnn_diagnostics(year):
     SPOOF_DELTA_A, SPOOF_DELTA_B = 0.0, 0.01
     SPOOF_FEES = {"maker": 0.0, "taker": 0.0008}
 
-    # Run inference on first test file
     df_test, features_test, seqs = prepare_sequences(TEST_FILES[0], feat_names, scaler)
 
     all_mu, all_sigma, all_alpha = [], [], []
@@ -457,7 +436,6 @@ def generate_pnn_diagnostics(year):
     alpha_arr = np.concatenate(all_alpha).flatten()
     print(f"  Predictions: {len(mu_arr)} events")
 
-    # 1. Predicted parameter distribution
     fig, axes = plt.subplots(1, 3, figsize=(15, 3.8))
     axes[0].hist(mu_arr, bins=150, color=BLUE, edgecolor="white", alpha=0.85, density=True)
     axes[0].set_xlabel(r"$\mu$ (location)")
@@ -482,7 +460,6 @@ def generate_pnn_diagnostics(year):
     plt.tight_layout()
     save_fig(fig, f"pnn_parameters_{year}.pdf")
 
-    # 2. NLL score distribution
     target_idx = feat_names.index("log_return")
     y_raw = features_test[feat_names].values[
         SEQ_LENGTH:SEQ_LENGTH + len(mu_arr), target_idx].astype(np.float32)
@@ -516,7 +493,6 @@ def generate_pnn_diagnostics(year):
     plt.tight_layout()
     save_fig(fig, f"pnn_nll_distribution_{year}.pdf")
 
-    # 3. Spoofing gain distribution (subsampled)
     spread_raw = (df_test["ask-price-1"] - df_test["bid-price-1"]).values
     mid_price = 0.5 * (df_test["ask-price-1"] + df_test["bid-price-1"]).values
     spread_seq = np.abs(spread_raw[SEQ_LENGTH:SEQ_LENGTH + len(mu_arr)])
@@ -525,7 +501,6 @@ def generate_pnn_diagnostics(year):
     mu_eur = mu_arr * mid_seq
     sigma_eur = sigma_arr * mid_seq
 
-    # Subsample for speed — 20K is plenty for histogram & statistics
     N_SUB = min(20_000, len(mu_eur))
     rng = np.random.default_rng(42)
     idx_sub = rng.choice(len(mu_eur), N_SUB, replace=False)
@@ -560,7 +535,6 @@ def generate_pnn_diagnostics(year):
     plt.tight_layout()
     save_fig(fig, f"pnn_gain_distribution_{year}.pdf")
 
-    # 4. δ_b sensitivity sweep
     delta_b_values = np.linspace(0.0, 0.05, 15)
     mean_gains = []
     pct_positive = []
@@ -611,18 +585,14 @@ def generate_pnn_diagnostics(year):
     }
 
 
-# ==============================================================================
-# PRAE Diagnostics
-# ==============================================================================
 def generate_prae_diagnostics(year):
     print(f"\n{'='*60}")
-    print(f"PRAE Diagnostics — {year}")
+    print(f"PRAE Diagnostics â€” {year}")
     print(f"{'='*60}")
     results_dir = os.path.join("results", str(year))
     feat_names, scaler = load_features_and_scaler(results_dir, "prae")
     num_features = len(feat_names)
 
-    # Load model
     weights_path = os.path.join(results_dir, "prae_weights.pth")
     state_dict = torch.load(weights_path, map_location="cpu", weights_only=True)
     num_train_samples = state_dict["mu"].shape[0]
@@ -645,7 +615,6 @@ def generate_prae_diagnostics(year):
 
     mu_values = model.mu.detach().cpu().numpy()
 
-    # 1. μ distribution
     anomaly_threshold = 0.1
     n_anomalies = int((mu_values < anomaly_threshold).sum())
     pct_anomalies = 100.0 * n_anomalies / len(mu_values)
@@ -674,7 +643,6 @@ def generate_prae_diagnostics(year):
     plt.tight_layout()
     save_fig(fig, f"prae_mu_distribution_{year}.pdf")
 
-    # 2. Reconstruction error: gated-in vs gated-out
     from torch.utils.data import DataLoader, TensorDataset
     year_files = sorted(glob.glob(os.path.join(DATA_DIR, f"{year}*.parquet")))
     train_file_list = year_files[:len(year_files) - NUM_HOLDOUT]
@@ -693,7 +661,6 @@ def generate_prae_diagnostics(year):
         seqs = create_sequences(sc, SEQ_LENGTH)
         if len(seqs) == 0:
             continue
-        # Subsample sequences for speed (5000 max)
         if len(seqs) > 5000:
             sub_idx = np.random.choice(len(seqs), 5000, replace=False)
             sub_idx.sort()
@@ -719,13 +686,12 @@ def generate_prae_diagnostics(year):
                     print(f"    batch {bi+1}/{len(loader)}")
         day_errs = np.concatenate(day_errs)
 
-        # Map subsampled indices to mu values
         end_idx = mu_idx + len(mu_offset_sub)
         if mu_idx + mu_offset_sub[-1] < len(mu_values):
             day_mu = mu_values[mu_idx + mu_offset_sub]
             rec_errors_in.append(day_errs[day_mu >= anomaly_threshold])
             rec_errors_out.append(day_errs[day_mu < anomaly_threshold])
-        mu_idx += len(feat_d) - SEQ_LENGTH + 1  # original seq count
+        mu_idx += len(feat_d) - SEQ_LENGTH + 1
 
     err_in = np.concatenate(rec_errors_in) if rec_errors_in else np.array([])
     err_out = np.concatenate(rec_errors_out) if rec_errors_out else np.array([])
@@ -749,10 +715,8 @@ def generate_prae_diagnostics(year):
     else:
         print("  WARNING: Could not compute gated reconstruction errors")
 
-    # 3. Test-time score distribution
     print(f"  Computing test scores...")
     _, _, seqs_test = prepare_sequences(TEST_FILES[0], feat_names, scaler)
-    # Subsample test sequences
     if len(seqs_test) > 5000:
         sub_i = np.random.choice(len(seqs_test), 5000, replace=False)
         seqs_test = seqs_test[sub_i]
@@ -799,16 +763,12 @@ def generate_prae_diagnostics(year):
     }
 
 
-# ==============================================================================
-# Main
-# ==============================================================================
 if __name__ == "__main__":
     import json
 
     np.random.seed(42)
     torch.manual_seed(42)
 
-    # Check which figures already exist to skip completed work
     def _last_fig_exists(model, year):
         """Return True if the last figure for this model/year exists."""
         last_figs = {
@@ -825,13 +785,12 @@ if __name__ == "__main__":
                              ("pnn", generate_pnn_diagnostics),
                              ("prae", generate_prae_diagnostics)]:
             if _last_fig_exists(model, year):
-                print(f"\n  [SKIP] {model.upper()} {year} — last figure already exists")
+                print(f"\n  [SKIP] {model.upper()} {year} â€” last figure already exists")
                 stats[model] = {}
             else:
                 stats[model] = func(year)
         all_stats[year] = stats
 
-    # Save stats for LaTeX reference
     stats_path = os.path.join(OUT_DIR, "diagnostics_stats.json")
     with open(stats_path, "w") as f:
         json.dump(all_stats, f, indent=2)

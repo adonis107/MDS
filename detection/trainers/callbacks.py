@@ -1,4 +1,4 @@
-import numpy as np
+﻿import numpy as np
 import torch
 import torch.nn as nn
 
@@ -50,7 +50,7 @@ class EarlyStopping:
             self.best_score = score
             self.save_checkpoint(val_loss, model)
             self.counter = 0
-            self.early_stop = False  # reset so subsequent fit() calls can train properly
+            self.early_stop = False
 
     def save_checkpoint(self, val_loss, model):
         if self.verbose:

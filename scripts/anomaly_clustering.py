@@ -1,4 +1,4 @@
-"""
+﻿"""
 Anomaly Clustering
 
 Cluster anomalies detected by Transformer+OC-SVM, PNN (spoofing gain), and PRAE (RFDR).
@@ -48,7 +48,6 @@ logger = logging.getLogger("anomaly_clustering")
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ── Constants ────────────────────────────────────────────────────────────────
 
 MODEL_TYPES = ["transformer_ocsvm", "pnn", "prae"]
 
@@ -73,7 +72,6 @@ PERIODS = {
 SCORE_COLS = ["ocsvm_norm", "pnn_norm", "prae_norm"]
 
 
-# ── CLI ──────────────────────────────────────────────────────────────────────
 
 def parse_args():
     p = argparse.ArgumentParser(description="Anomaly clustering from trained models.")
@@ -82,17 +80,14 @@ def parse_args():
     p.add_argument("--results-dir", default="results")
     p.add_argument("--seq-length", type=int, default=25)
     p.add_argument("--batch-size", type=int, default=64)
-    # Spoofing gain
     p.add_argument("--spoof-Q", type=float, default=4500.0)
     p.add_argument("--spoof-q", type=float, default=100.0)
     p.add_argument("--spoof-delta-a", type=float, default=0.0)
     p.add_argument("--spoof-delta-b", type=float, default=0.01)
     p.add_argument("--spoof-maker-fee", type=float, default=0.0)
-    p.add_argument("--spoof-taker-fee", type=float, default=0.0008)  # ALIGNED: Euronext Paris fee (report §3.4)
-    # RFDR
+    p.add_argument("--spoof-taker-fee", type=float, default=0.0008)
     p.add_argument("--rfdr-window", type=int, default=500)
     p.add_argument("--rfdr-alpha", type=float, default=0.05)
-    # HDBSCAN
     p.add_argument("--hdbscan-min-cluster-frac", type=int, default=20)
     p.add_argument("--hdbscan-max-cluster-size", type=int, default=500)
     p.add_argument("--hdbscan-min-samples", type=int, default=15)
@@ -100,7 +95,6 @@ def parse_args():
     return p.parse_args()
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
 
 def resolve_test_files(data_dir):
     files_2010 = sorted(glob.glob(os.path.join(data_dir, "2010-*.parquet")))
@@ -202,9 +196,6 @@ def compute_file_scores(features_day, spread_raw, mid_price_raw, feature_names_m
                             torch.mean((x - rec) ** 2, dim=(1, 2)).cpu().numpy()
                         )
                 scores = np.concatenate(scores_list)
-            # Use native OC-SVM decision boundary (dissimilarity >= 0) for broad
-            # anomaly coverage in clustering. test.py uses a stricter calibrated
-            # baseline tau computed from training data.
             preds = (scores > 0).astype(int)
 
         elif model_type == "pnn":
@@ -232,9 +223,6 @@ def compute_file_scores(features_day, spread_raw, mid_price_raw, feature_names_m
                 mid_seq = np.pad(mid_seq, (0, len(mu_arr) - len(mid_seq)), mode="edge")
             spread_seq = np.where(np.abs(spread_seq) > 0, np.abs(spread_seq), 1e-4)
 
-            # PNN outputs are in log-return units; the spoofing-gain formula
-            # (Fabre & Challet) expects EUR price changes.  Convert via the
-            # first-order approximation  Δp ≈ r · p_mid.
             mu_eur = mu_arr * mid_seq
             sigma_eur = sigma_arr * mid_seq
 
@@ -246,7 +234,7 @@ def compute_file_scores(features_day, spread_raw, mid_price_raw, feature_names_m
             )
             preds = (scores > 0).astype(int)
 
-        else:  # prae
+        else:
             x_tensor = torch.tensor(sequences, dtype=torch.float32)
             loader = DataLoader(
                 TensorDataset(x_tensor, x_tensor), batch_size=args.batch_size, shuffle=False
@@ -274,7 +262,6 @@ def compute_file_scores(features_day, spread_raw, mid_price_raw, feature_names_m
     return results
 
 
-# ── Plotting ─────────────────────────────────────────────────────────────────
 
 def save_cluster_pca_plot(train_years, score_data, cluster_data, anom_data, output_dir, random_state):
     CLUSTER_COLORS = plt.rcParams["axes.prop_cycle"].by_key()["color"]
@@ -364,7 +351,6 @@ def save_detection_rate_heatmap(train_years, score_data, cluster_data, anom_data
     logger.info("Saved %s", path)
 
 
-# ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
     args = parse_args()
@@ -377,20 +363,17 @@ def main():
     output_dir = os.path.join(args.results_dir, "anomaly_clustering")
     os.makedirs(output_dir, exist_ok=True)
 
-    # ── Migrate monolithic caches ────────────────────────────────────────
     for year in args.train_years:
         n_mig = _migrate_monolithic_cache(args.results_dir, year)
         if n_mig > 0:
             logger.info("Migrated %d files from monolithic cache for year %d.", n_mig, year)
 
-    # ── Report cache status ──────────────────────────────────────────────
     for year in args.train_years:
         bns = [os.path.basename(f) for f in test_files]
         cached = [bn for bn in bns if _is_file_cached(args.results_dir, year, bn)]
         missing = [bn for bn in bns if not _is_file_cached(args.results_dir, year, bn)]
         logger.info("Year %d: %d/%d cached, %d to compute", year, len(cached), len(bns), len(missing))
 
-    # ── Load feature names & models ──────────────────────────────────────
     feature_names_by_year = {}
     loaded_models_by_year = {}
     loaded_scalers_by_year = {}
@@ -424,7 +407,6 @@ def main():
         else:
             logger.info("Year %d: fully cached, skipping model loading.", year)
 
-    # ── Score computation / cache loading ────────────────────────────────
     all_scores_by_year = {y: {mt: [] for mt in MODEL_TYPES} for y in args.train_years}
     all_preds_by_year = {y: {mt: [] for mt in MODEL_TYPES} for y in args.train_years}
     all_period_labels = []
@@ -484,7 +466,6 @@ def main():
     n_total = len(period_labels_seq)
     logger.info("Total: %d sequences from %d files.", n_total, len(test_files))
 
-    # ── Anomaly selection ────────────────────────────────────────────────
     anom_data = {}
     for year in args.train_years:
         pred_matrix = np.column_stack([all_preds_by_year[year][mt][:n_total] for mt in MODEL_TYPES])
@@ -503,7 +484,6 @@ def main():
             n_mt = int(all_preds_by_year[year][mt][:n_total].sum())
             logger.info("  %25s: %6d (%.2f%%)", mt, n_mt, 100 * n_mt / n_total)
 
-    # ── Normalise scores ─────────────────────────────────────────────────
     score_data = {}
     for year in args.train_years:
         score_matrix_full_norm = np.zeros((n_total, len(MODEL_TYPES)), dtype=np.float32)
@@ -522,7 +502,6 @@ def main():
         }
         logger.info("Year %d score distribution:\n%s", year, score_df.describe().round(4).to_string())
 
-    # ── HDBSCAN clustering ───────────────────────────────────────────────
     cluster_data = {}
     for year in args.train_years:
         X_clust = score_data[year]["X_clust"]
@@ -567,7 +546,6 @@ def main():
         logger.info("Year %d: %d clusters, %d noise (%.1f%%), sil=%.4f, db=%.4f",
                      year, n_hdb_clusters, n_noise, 100 * n_noise / n_anom, sil, db)
 
-    # ── Summary table ────────────────────────────────────────────────────
     for year in args.train_years:
         cl = cluster_data[year]
         preds_anom = anom_data[year]["preds_anom"]
@@ -621,11 +599,9 @@ def main():
         logger.info("Summary for %d:\n%s", year, summary_df.to_string())
         summary_df.to_csv(os.path.join(output_dir, f"summary_{year}.csv"))
 
-    # ── Plots ────────────────────────────────────────────────────────────
     save_cluster_pca_plot(args.train_years, score_data, cluster_data, anom_data, output_dir, args.random_state)
     save_detection_rate_heatmap(args.train_years, score_data, cluster_data, anom_data, output_dir)
 
-    # ── Save raw results ─────────────────────────────────────────────────
     for year in args.train_years:
         np.savez_compressed(
             os.path.join(output_dir, f"cluster_labels_{year}.npz"),

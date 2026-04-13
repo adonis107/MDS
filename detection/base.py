@@ -1,4 +1,4 @@
-import torch.nn as nn
+﻿import torch.nn as nn
 from abc import ABC, abstractmethod
 
 class BaseDeepModel(nn.Module):

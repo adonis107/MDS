@@ -1,4 +1,4 @@
-"""
+﻿"""
 Generate figures for Section 5.4 (Proximity Analysis).
 
 Reads anomaly_rates_by_day.csv and proximity_comparison.csv from
@@ -16,11 +16,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# ── Output directory ────────────────────────────────────────────────
 OUT_DIR = os.path.join("figures", "results")
 os.makedirs(OUT_DIR, exist_ok=True)
 
-# ── Plot style (matches prior sections) ────────────────────────────
 plt.rcParams.update({
     "font.size": 10,
     "axes.titlesize": 11,
@@ -86,7 +84,6 @@ def compute_welch_table(daily):
             mean_a, mean_b = ta.mean(), tb.mean()
             diff = mean_a - mean_b
             t_stat, p_val = sp_stats.ttest_ind(ta, tb, equal_var=False)
-            # Standard error of the difference
             se = np.sqrt(ta.var(ddof=1)/len(ta) + tb.var(ddof=1)/len(tb))
             rows.append({
                 "year": year,
@@ -103,7 +100,6 @@ def compute_welch_table(daily):
     return pd.DataFrame(rows)
 
 
-# ── Figure 5.4.1: Paired dot plot, T_A vs T_B per model ───────────
 def fig_ta_vs_tb_dots(daily):
     fig, axes = plt.subplots(1, 3, figsize=(10, 3.5), sharey=False)
 
@@ -117,7 +113,6 @@ def fig_ta_vs_tb_dots(daily):
             color = MODEL_COLORS[model]
             alpha = 1.0 if year == "2015" else 0.6
 
-            # plot individual day dots
             jitter_a = np.random.default_rng(42).uniform(-0.08, 0.08, len(ta_rates))
             jitter_b = np.random.default_rng(43).uniform(-0.08, 0.08, len(tb_rates))
             ax.scatter(np.zeros(len(ta_rates)) + jitter_a, ta_rates,
@@ -127,7 +122,6 @@ def fig_ta_vs_tb_dots(daily):
                        marker=marker, color=color, alpha=alpha, s=40,
                        edgecolors="white", linewidths=0.5, zorder=3)
 
-            # connect means with a line
             mean_a, mean_b = ta_rates.mean(), tb_rates.mean()
             ls = "-" if year == "2015" else "--"
             ax.plot([0, 1], [mean_a, mean_b], ls=ls, color=color,
@@ -144,7 +138,6 @@ def fig_ta_vs_tb_dots(daily):
     save_fig(fig, "fig_5_4_ta_vs_tb_dots.pdf")
 
 
-# ── Figure 5.4.2: Effect size bar chart ────────────────────────────
 def fig_effect_size_bars(tbl):
     fig, ax = plt.subplots(figsize=(6, 3.5))
 
@@ -163,7 +156,6 @@ def fig_effect_size_bars(tbl):
                       yerr=sub["se"], capsize=3,
                       color=year_colors[year], edgecolor="white",
                       linewidth=0.5, label=year, alpha=0.85)
-        # annotate p-values
         for i, (_, row) in enumerate(sub.iterrows()):
             p = row["p_value"]
             star = "*" if p < 0.05 else ""
@@ -183,7 +175,6 @@ def fig_effect_size_bars(tbl):
     save_fig(fig, "fig_5_4_effect_size_bars.pdf")
 
 
-# ── Main ───────────────────────────────────────────────────────────
 if __name__ == "__main__":
     daily = load_daily_rates()
     tbl = compute_welch_table(daily)
@@ -195,7 +186,6 @@ if __name__ == "__main__":
     fig_ta_vs_tb_dots(daily)
     fig_effect_size_bars(tbl)
 
-    # Save table for LaTeX reference
     tbl.to_csv(os.path.join(OUT_DIR, "proximity_welch_stats.csv"), index=False)
     print(f"  saved {os.path.join(OUT_DIR, 'proximity_welch_stats.csv')}")
     print("\nDone.")

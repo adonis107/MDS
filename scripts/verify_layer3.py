@@ -1,4 +1,4 @@
-"""
+﻿"""
 Layer 3: Integration check.  
 Loads trained models and runs inference on one real data day.
 """
@@ -23,13 +23,9 @@ def record(check_id, status, description, result, action="none required"):
             print(f"       Action: {action}")
 
 
-# ======================================================================
-# 3.1  Preprocessing — run on one real file
-# ======================================================================
 def check_3_1():
     """Verify that preprocessed data exists and is well-formed."""
     DATA_DIR = os.path.join("data", "processed", "TOTF.PA-book")
-    # Use a 2015 file (training year)
     test_file = None
     for f in sorted(os.listdir(DATA_DIR)):
         if f.startswith("2015") and f.endswith(".parquet"):
@@ -48,7 +44,6 @@ def check_3_1():
     record("3.1a", "PASS", "Processed file loaded",
            f"{os.path.basename(test_file)}: {df.shape[0]} rows, {df.shape[1]} cols")
 
-    # Check reasonable size
     if df.shape[0] < 1000:
         record("3.1b", "WARNING", "Processed file row count",
                f"Only {df.shape[0]} rows (expected >1000 for a trading day)")
@@ -59,9 +54,6 @@ def check_3_1():
     return test_file
 
 
-# ======================================================================
-# 3.2  Load trained model and run inference
-# ======================================================================
 def check_3_2_3(test_file):
     """Load trained 2015 models and run inference on processed data."""
     from detection.data.loaders import create_sequences, load_processed
@@ -78,26 +70,22 @@ def check_3_2_3(test_file):
         for side, typ in [("bid","price"),("bid","volume"),("ask","price"),("ask","volume")]
     ]
 
-    # Load feature names
     feat_path = os.path.join(RESULTS_DIR, "transformer_ocsvm_features.txt")
     with open(feat_path) as f:
         feature_names = [line.strip() for line in f if line.strip()]
     record("3.2a", "PASS", "Feature names loaded",
            f"{len(feature_names)} features from {feat_path}")
 
-    # Load scaler
     scaler_path = os.path.join(RESULTS_DIR, "transformer_ocsvm_scaler.pkl")
     scaler = joblib.load(scaler_path)
     record("3.2b", "PASS", "Scaler loaded", f"Type: {type(scaler).__name__}")
 
-    # Load data
     df_day, features = load_processed(test_file, TIME_COL, LOB_COLUMNS)
     for col in feature_names:
         if col not in features.columns:
             features[col] = 0.0
     features = features[feature_names]
 
-    # Scale
     scaled = scaler.transform(features.values.astype(np.float32)).astype(np.float32)
     has_nan_scaled = np.isnan(scaled).any()
     has_inf_scaled = np.isinf(scaled).any()
@@ -109,18 +97,14 @@ def check_3_2_3(test_file):
     else:
         record("3.2c", "PASS", "Scaled data quality", "No NaN or Inf")
 
-    # Create sequences
     sequences = create_sequences(scaled, SEQ_LENGTH)
     n_seqs = sequences.shape[0]
     record("3.2d", "PASS", "Sequences created",
            f"Shape: {sequences.shape}")
 
-    # Load transformer_ocsvm model
     num_features = len(feature_names)
     try:
         weights_path = os.path.join(RESULTS_DIR, "transformer_ocsvm_weights.pth")
-        # Infer architecture from saved state_dict to handle weights
-        # trained with a prior config (the cluster will retrain with current config).
         sd = torch.load(weights_path, map_location=DEVICE, weights_only=True)
         model_dim = sd["encoder.embedding.weight"].shape[0]
         num_layers = max(
@@ -130,7 +114,6 @@ def check_3_2_3(test_file):
         dim_feedforward = sd["encoder.transformer_encoder.layers.0.linear1.weight"].shape[0]
         in_proj = sd["encoder.transformer_encoder.layers.0.self_attn.in_proj_weight"].shape[0]
         num_heads = in_proj // (3 * model_dim)
-        # representation_dim = bottleneck output dim
         representation_dim = sd["encoder.bottleneck.weight"].shape[0]
         inferred_cfg = dict(
             model_dim=model_dim, num_heads=num_heads, num_layers=num_layers,
@@ -138,7 +121,6 @@ def check_3_2_3(test_file):
         model, ocsvm_obj = load_model(
             "transformer_ocsvm", num_features, weights_path, DEVICE,
             seq_length=SEQ_LENGTH, transformer_cfg=inferred_cfg)
-        # ocsvm_obj may be raw state dict or OCSVM instance
         if isinstance(ocsvm_obj, dict):
             ocsvm_inst = OCSVM(nu=0.01, n_components=300, sgd_lr=0.01, sgd_epochs=500)
             ocsvm_inst.load_state_dict(ocsvm_obj)
@@ -151,7 +133,6 @@ def check_3_2_3(test_file):
         record("3.2e", "FAIL", "TF-OCSVM model loading", str(e))
         return
 
-    # Run forward pass on a batch
     try:
         batch_size = min(64, n_seqs)
         x_batch = torch.tensor(sequences[:batch_size], dtype=torch.float32)
@@ -160,7 +141,6 @@ def check_3_2_3(test_file):
         record("3.2f", "PASS", "TF encoder forward pass",
                f"Latent shape: {latent.shape}")
 
-        # Compute dissimilarity scores
         scores = ocsvm_obj.dissimilarity_score(latent.cpu().numpy())
         if np.all(np.isfinite(scores)):
             record("3.3a", "PASS", "Dissimilarity scores on real data",
@@ -171,12 +151,10 @@ def check_3_2_3(test_file):
             record("3.3a", "FAIL", "Dissimilarity scores",
                    f"{n_bad}/{len(scores)} non-finite")
 
-        # Baseline tau
         tau = OCSVM.fit_baseline_tau(scores, contamination=0.01)
         record("3.3b", "PASS", "Baseline tau on real data",
                f"tau={tau:.6f}")
 
-        # Predict
         preds = ocsvm_obj.predict(latent.cpu().numpy(), tau=tau)
         n_flagged = (preds == 1).sum()
         record("3.3c", "PASS", "Predictions on real data",
@@ -186,7 +164,6 @@ def check_3_2_3(test_file):
         record("3.2f", "FAIL", "TF encoder forward pass", traceback.format_exc())
         return
 
-    # Run on a subset (2000 seqs) — full day is too slow on CPU for a local check
     try:
         n_check = min(2000, n_seqs)
         all_scores = []
@@ -209,7 +186,6 @@ def check_3_2_3(test_file):
         record("3.3d", "FAIL", "Batch inference", traceback.format_exc())
         return
 
-    # Threshold methods on real scores
     from detection.thresholds.pot import PeakOverThreshold
     from detection.thresholds.dspot import DriftStreamingPeakOverThreshold
     from detection.thresholds.rfdr import RollingFalseDiscoveryRate
@@ -245,9 +221,6 @@ def check_3_2_3(test_file):
         record("3.3g", "FAIL", "RFDR on real scores", str(e))
 
 
-# ======================================================================
-# Main
-# ======================================================================
 if __name__ == "__main__":
     print("=" * 60)
     print("LAYER 3: INTEGRATION CHECK")
@@ -257,7 +230,6 @@ if __name__ == "__main__":
     if test_file is not None:
         check_3_2_3(test_file)
 
-    # Summary
     print(f"\n{'='*60}")
     print("LAYER 3 SUMMARY")
     print(f"{'='*60}")

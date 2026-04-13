@@ -1,4 +1,4 @@
-"""
+﻿"""
 Anomaly detection pipeline orchestrator.
 
 Coordinates the full workflow -- data loading, feature engineering,
@@ -51,9 +51,6 @@ from detection.trainers.training import Trainer
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Registries
-# ---------------------------------------------------------------------------
 
 SCALER_REGISTRY: Dict[str, type] = {
     "minmax": MinMaxScaler,
@@ -66,9 +63,6 @@ MODEL_TYPES = {"transformer_ocsvm", "pnn", "prae"}
 
 THRESHOLD_METHODS = {"pot", "spot", "dspot", "rfdr"}
 
-# ---------------------------------------------------------------------------
-# Config helpers
-# ---------------------------------------------------------------------------
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
@@ -77,9 +71,6 @@ def load_config(config_path: str) -> Dict[str, Any]:
         return yaml.safe_load(fh)
 
 
-# ---------------------------------------------------------------------------
-# Pipeline
-# ---------------------------------------------------------------------------
 
 
 class AnomalyDetectionPipeline:
@@ -90,14 +81,12 @@ class AnomalyDetectionPipeline:
     sequencing, data hand-off, and logging.
     """
 
-    # ------------------------------------------------------------------ init
     def __init__(self, config: Dict[str, Any]) -> None:
         self.config: Dict[str, Any] = config
         self._device: torch.device = self._resolve_device(
             config.get("training", {}).get("device", "auto")
         )
 
-        # Mutable state populated by successive pipeline stages
         self.raw_df: Optional[pd.DataFrame] = None
         self.features_df: Optional[pd.DataFrame] = None
         self.feature_names: List[str] = []
@@ -111,7 +100,6 @@ class AnomalyDetectionPipeline:
 
         logger.info("Pipeline initialised  --  device: %s", self._device)
 
-    # ------------------------------------------------------------- utilities
     @staticmethod
     def _resolve_device(device_str: str) -> torch.device:
         if device_str == "auto":
@@ -120,7 +108,6 @@ class AnomalyDetectionPipeline:
             )
         return torch.device(device_str)
 
-    # -------------------------------------------------- 1. data loading
     def load_data(
         self,
         filepath: Optional[str] = None,
@@ -149,10 +136,8 @@ class AnomalyDetectionPipeline:
         logger.info("Loading data from %s ...", filepath)
         df = get_lob(filepath)
 
-        # -- clean artifact columns and sort ----------------------------
         df = clean_lob(df)
 
-        # -- filter to market hours -------------------------------------
         time_col: str = data_cfg.get("time_col", "xltime")
         market_open: float = data_cfg.get("market_open_hour", 9.0)
         market_close: float = data_cfg.get("market_close_hour", 17.5)
@@ -175,7 +160,6 @@ class AnomalyDetectionPipeline:
         )
         return self.raw_df
 
-    # -------------------------------------------------- 2. feature engineering
     def engineer_features(
         self,
         df: Optional[pd.DataFrame] = None,
@@ -204,7 +188,6 @@ class AnomalyDetectionPipeline:
         df = df.copy()
         features = pd.DataFrame(index=df.index)
 
-        # -- base -------------------------------------------------------
         if "base" in feature_sets:
             df = compute_imbalance(df)
             features["L1_Imbalance"] = df["L1_Imbalance"]
@@ -213,7 +196,6 @@ class AnomalyDetectionPipeline:
             features = compute_elasticity(df, features)
             features = compute_volatility(df, features, window=window)
 
-        # -- tao (weighted imbalance) -----------------------------------
         if "tao" in feature_sets:
             tao_cfgs = feat_cfg.get("tao_configs", [
                 {"name": "Weighted_Imbalance_decreasing",
@@ -230,19 +212,15 @@ class AnomalyDetectionPipeline:
                     levels=tc.get("levels", 5),
                 )
 
-        # -- poutre (event flow / rapidity) -----------------------------
         if "poutre" in feature_sets:
             features = compute_event_flow(df, features)
 
-        # -- hawkes (memory) --------------------------------------------
         if "hawkes" in feature_sets:
             features = compute_hawkes(df, features)
 
-        # -- ofi (order flow imbalance) ---------------------------------
         if "ofi" in feature_sets:
             features = compute_ofi(df, features)
 
-        # -- cleanup ----------------------------------------------------
         features.replace([np.inf, -np.inf], np.nan, inplace=True)
         features = features.fillna(0)
 
@@ -267,7 +245,6 @@ class AnomalyDetectionPipeline:
         upper = features.quantile(clip_q[1])
         features = features.clip(lower=lower, upper=upper, axis=1)
 
-        # Drop constant / zero-variance columns
         std_devs = features.std()
         drop_cols = std_devs[std_devs < 1e-9].index.tolist()
         if drop_cols:
@@ -285,7 +262,6 @@ class AnomalyDetectionPipeline:
         )
         return features
 
-    # -------------------------------------------------- 3. preprocessing
     def preprocess(
         self,
         features_df: Optional[pd.DataFrame] = None,
@@ -319,7 +295,6 @@ class AnomalyDetectionPipeline:
                 f"Target column '{target_col}' not found in features."
             )
 
-        # -- scaling setup ----------------------------------------------
         logger.info("Scaling with method: %s", scaler_name)
         scaler_cls = SCALER_REGISTRY.get(scaler_name)
         if scaler_cls is None:
@@ -328,9 +303,6 @@ class AnomalyDetectionPipeline:
                 f"Choose from {list(SCALER_REGISTRY)}"
             )
 
-        # -- chronological split on raw data first ----------------------
-        # n_total is the number of sequences that would be produced from the
-        # full array; splitting here avoids ever materialising all sequences.
         data_values = features_df.values.astype(np.float32)
         n_total = len(data_values) - seq_length
         train_end = int(n_total * train_ratio)
@@ -340,13 +312,11 @@ class AnomalyDetectionPipeline:
         val_raw = data_values[train_end : val_end + seq_length]
         test_raw = data_values[val_end :]
 
-        # Fit scaler on training portion only (no leakage)
         self.scaler = scaler_cls()
         train_scaled = self.scaler.fit_transform(train_raw).astype(np.float32)
         val_scaled = self.scaler.transform(val_raw).astype(np.float32)
         test_scaled = self.scaler.transform(test_raw).astype(np.float32)
 
-        # -- sequencing per split (avoids one giant intermediate array) -
         x_train = torch.from_numpy(create_sequences(train_scaled, seq_length))
         x_val = torch.from_numpy(create_sequences(val_scaled, seq_length))
         x_test = torch.from_numpy(create_sequences(test_scaled, seq_length))
@@ -355,10 +325,8 @@ class AnomalyDetectionPipeline:
             len(x_train), len(x_val), len(x_test),
         )
 
-        # Targets for PNN (next-step log_return)
         target_idx = self.feature_names.index(target_col)
 
-        # -- build datasets per model type ------------------------------
         if model_type == "pnn":
             y_train = torch.from_numpy(
                 train_scaled[seq_length:, target_idx]
@@ -386,7 +354,6 @@ class AnomalyDetectionPipeline:
             test_ds = TensorDataset(x_test, x_test)
 
         else:
-            # transformer_ocsvm (autoencoder) -- target is the input
             train_ds = TensorDataset(x_train, x_train)
             val_ds = TensorDataset(x_val, x_val)
             test_ds = TensorDataset(x_test, x_test)
@@ -409,7 +376,6 @@ class AnomalyDetectionPipeline:
         )
         return self.train_loader, self.val_loader, self.test_loader
 
-    # -------------------------------------------------- 4. model factory
     def build_model(self) -> Any:
         """Instantiate model (and optional detector) from configuration.
 
@@ -442,7 +408,6 @@ class AnomalyDetectionPipeline:
         builder(model_cfg, training_cfg, seq_length, num_features)
         return self.model
 
-    # -- builders (private) ---
 
     def _build_transformer_ocsvm(
         self,
@@ -541,7 +506,6 @@ class AnomalyDetectionPipeline:
             sigma=p_cfg.get("sigma", 0.5),
         ).to(self._device)
 
-    # -------------------------------------------------- 5. training
     def train(self) -> Dict[str, Any]:
         """Train the current model using the prepared data loaders."""
         model_type: str = self.config.get("model", {}).get(
@@ -588,7 +552,6 @@ class AnomalyDetectionPipeline:
         logger.info("Training complete.")
         return {"status": "trained"}
 
-    # -------------------------------------------------- 6. evaluation
     def evaluate(
         self,
         y_true: Optional[np.ndarray] = None,
@@ -637,7 +600,6 @@ class AnomalyDetectionPipeline:
         )
         return results
 
-    # -- scoring helpers (private) ---
 
     def _compute_test_scores(self, model_type: str) -> np.ndarray:
         """Return per-sample anomaly scores on the test set."""
@@ -647,7 +609,6 @@ class AnomalyDetectionPipeline:
         if model_type == "pnn":
             return self._compute_pnn_scores()
 
-        # prae / generic BaseDeepModel
         return self._compute_deep_model_scores()
 
     def _compute_deep_model_scores(self) -> np.ndarray:
@@ -685,7 +646,6 @@ class AnomalyDetectionPipeline:
                 all_nlls.append(nll.cpu().numpy().flatten())
         return np.concatenate(all_nlls)
 
-    # -- threshold helpers (private) ---
 
     def _find_threshold(self, scores: np.ndarray) -> float:
         """Select an anomaly threshold using the configured method."""
@@ -753,7 +713,6 @@ class AnomalyDetectionPipeline:
         )
         return float(np.mean(scores) + 3.0 * np.std(scores))
 
-    # -------------------------------------------------- 7. persistence
     def save(self, output_dir: Optional[str] = None) -> None:
         """Save model weights, configuration, and test scores."""
         out_cfg = self.config.get("output", {})
@@ -781,7 +740,6 @@ class AnomalyDetectionPipeline:
             np.save(scores_path, self.test_scores)
             logger.info("Test scores saved to %s", scores_path)
 
-    # -------------------------------------------------- 8. full run
     def run(self) -> Dict[str, Any]:
         """Execute the complete pipeline end-to-end.
 

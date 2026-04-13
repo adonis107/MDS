@@ -1,17 +1,4 @@
-# %% [markdown]
-# # Testing of Sequentially Trained Models
-#
-# Evaluate the three trained model pipelines on held-out test files:
-# - **Transformer + OC-SVM**: OC-SVM decision function on latent representations.
-# - **PNN + Gain Calc**: Spoofing gain from PNN-predicted skew-normal parameters.
-# - **PRAE + RFDR**: Rolling False Discovery Rate on reconstruction error.
-#
-# For each pipeline we save:
-# 1. Raw scores from the initial model (Transformer / PNN / PRAE).
-# 2. Binary predictions from the threshold method (OC-SVM / Gain Calc / RFDR).
-# 3. Per-period anomaly rates and root-cause feature rankings.
-
-# %%
+﻿
 import os
 import sys
 import glob
@@ -47,38 +34,20 @@ logger = logging.getLogger("testing")
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 logger.info("Device: %s", DEVICE)
 
-# %% [markdown]
-# ## Configuration
-#
-# ### File selection
-# Change `TEST_FILE_PATTERNS` to test on different files.
-# Each entry is a glob pattern relative to `DATA_DIR`.
-# Examples:
-#   - "2015-02-0*"  → all February 2015 files starting with 0
-#   - "2017-*"      → all 2017 files
-#   - "2015-02-03*" → a single specific day
 
-# %%
-# ── Paths ──────────────────────────────────────────────────────────
 DATA_DIR = os.path.join("data", "processed", "TOTF.PA-book")
-TRAIN_YEAR = os.environ.get("MDS_YEAR", "2015")  # override via env for SLURM parallelism
+TRAIN_YEAR = os.environ.get("MDS_YEAR", "2015")
 RESULTS_DIR = os.path.join("results", str(TRAIN_YEAR))
 OUTPUT_DIR = os.path.join("results", str(TRAIN_YEAR), "test_output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# ── Test file selection ────────────────────────────────────────────
-# Build test splits from the training year's held-out files and
-# out-of-sample years.  The first 9 held-out files form T_A
-# (proximate) and the final 3 form T_B (distal).
 NUM_HOLDOUT = 12
 YEAR_FILES = sorted(glob.glob(os.path.join(DATA_DIR, f"{TRAIN_YEAR}*.parquet")))
 NUM_TRAIN_DAYS = len(YEAR_FILES) - NUM_HOLDOUT
 TEST_PROXIMATE_FILES = YEAR_FILES[NUM_TRAIN_DAYS:NUM_TRAIN_DAYS + 9]
 TEST_DISTAL_FILES = YEAR_FILES[NUM_TRAIN_DAYS + 9:]
 
-# Out-of-sample years (always included)
 OOS_PATTERNS = ["2010-*"]
-# Cross-year: if training on 2015, also test on 2017 and vice versa
 CROSS_YEAR = "2017" if TRAIN_YEAR == "2015" else "2015"
 OOS_PATTERNS.append(f"{CROSS_YEAR}-*")
 
@@ -90,14 +59,9 @@ for pattern in OOS_PATTERNS:
     OOS_FILES.extend(matches)
 OOS_FILES = sorted(set(OOS_FILES))
 
-# Combined test file list with split labels
 TEST_FILES = TEST_PROXIMATE_FILES + TEST_DISTAL_FILES + OOS_FILES
 TEST_FILES = sorted(set(TEST_FILES))
 
-# ── Chunked execution for SLURM parallelism ──────────────────
-# Set MDS_NUM_CHUNKS > 1 and MDS_CHUNK=0..N-1 to split scoring across
-# multiple SLURM jobs.  Each chunk saves to test_output/chunk_X/.
-# Run test_merge.py afterward to combine results and run full post-hoc.
 NUM_CHUNKS = int(os.environ.get("MDS_NUM_CHUNKS", "1"))
 CHUNK_IDX = int(os.environ.get("MDS_CHUNK", "0"))
 
@@ -112,7 +76,6 @@ if NUM_CHUNKS > 1:
     OUTPUT_DIR = os.path.join(OUTPUT_DIR, f"chunk_{CHUNK_IDX}")
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# Build a mapping: filename -> split label
 _proximate_set = set(os.path.basename(f) for f in TEST_PROXIMATE_FILES)
 _distal_set = set(os.path.basename(f) for f in TEST_DISTAL_FILES)
 
@@ -136,7 +99,6 @@ logger.info("  Out-of-sample:   %d files", len(OOS_FILES))
 for f in TEST_FILES:
     logger.info("  [%s] %s", _get_split_label(f), os.path.basename(f))
 
-# Model / data parameters (must match training)
 MODEL_TYPES = ["transformer_ocsvm", "pnn", "prae"]
 SEQ_LENGTH = 25
 BATCH_SIZE = 64
@@ -147,25 +109,17 @@ LOB_COLUMNS = [
     for side, typ in [("bid", "price"), ("bid", "volume"), ("ask", "price"), ("ask", "volume")]
 ]
 
-# Threshold parameters
-# RFDR (PRAE)
 RFDR_WINDOW = 500
 RFDR_ALPHA = 0.05
 
-# Baseline tau for OC-SVM (quantile-based, see Section 3.2.1)
 OCSVM_BASELINE_TAU_CONTAMINATION = 0.01
 
-# Spoofing gain (PNN)
 SPOOF_Q = 4500
 SPOOF_q = 100
 SPOOF_DELTA_A = 0.0
 SPOOF_DELTA_B = 0.01
-# Euronext Paris equity fee schedule for large-cap stocks (TOTF.PA).
-# Maker fee ~0 (Euronext offers maker rebates on large caps).
-# Taker fee ~0.08% = 0.0008 (typical for large-cap equities on Euronext).
 SPOOF_FEES = {"maker": 0.0, "taker": 0.0008}
 
-# Time-of-day periods for Euronext Paris (hours since midnight, CET)
 PERIODS = {
     "1st_hour":        (9.0, 10.0),
     "rest_of_morning": (10.0, 12.0),
@@ -173,10 +127,7 @@ PERIODS = {
     "american_open":   (15.5, 17.5),
 }
 
-# %% [markdown]
-# ## Load Models, Scalers, Feature Names
 
-# %%
 feature_names_map = {}
 for mt in MODEL_TYPES:
     feat_path = os.path.join(RESULTS_DIR, f"{mt}_features.txt")
@@ -206,10 +157,7 @@ for model_type in MODEL_TYPES:
     loaded_scalers[model_type] = joblib.load(scaler_path) if os.path.exists(scaler_path) else MinMaxScaler()
     logger.info("Loaded model & scaler for %s (%d features)", model_type, num_features)
 
-# Compute baseline tau for TF-OC-SVM
-# Dissimilarity scores on training data => quantile-based baseline.
-# Used as threshold when no EVT/RFDR thresholding has been calibrated.
-OCSVM_BASELINE_TAU = 0.0  # fallback if computation fails
+OCSVM_BASELINE_TAU = 0.0
 _tf_model, _tf_ocsvm = loaded_models.get("transformer_ocsvm", (None, None))
 if _tf_model is not None and _tf_ocsvm is not None:
     _tf_scaler = loaded_scalers["transformer_ocsvm"]
@@ -220,7 +168,7 @@ if _tf_model is not None and _tf_ocsvm is not None:
     logger.info("Computing baseline tau on %d training files (contamination=%.2f%%)...",
                 len(_train_files), 100 * OCSVM_BASELINE_TAU_CONTAMINATION)
     with torch.no_grad():
-        for _tf in _train_files[:5]:  # first 5 days for speed
+        for _tf in _train_files[:5]:
             try:
                 _df, _feat = load_processed(_tf, "xltime", LOB_COLUMNS)
                 for _c in _tf_feat_names:
@@ -254,18 +202,14 @@ if _tf_model is not None and _tf_ocsvm is not None:
         logger.warning("Could not compute baseline tau; using default tau=0.0")
     del _train_scores_all
 
-# %% [markdown]
-# ## Score Test Files
 
-# %%
-# Per-model accumulators
-all_scores = {mt: [] for mt in MODEL_TYPES}   # raw model scores
-all_preds = {mt: [] for mt in MODEL_TYPES}     # binary predictions from threshold
+all_scores = {mt: [] for mt in MODEL_TYPES}
+all_preds = {mt: [] for mt in MODEL_TYPES}
 all_period_labels_seq = []
 day_boundaries = [0]
 day_names = []
 day_split_labels = []
-processed_test_files = []  # track files that were actually scored
+processed_test_files = []
 
 for file_idx, test_file in enumerate(TEST_FILES):
     day_name = os.path.basename(test_file)
@@ -288,7 +232,6 @@ for file_idx, test_file in enumerate(TEST_FILES):
         del df_day, features_day
         continue
 
-    # Append only for non-skipped files (keeps day_names aligned with day_boundaries)
     day_names.append(day_name)
     day_split_labels.append(split_label)
     processed_test_files.append(test_file)
@@ -296,7 +239,7 @@ for file_idx, test_file in enumerate(TEST_FILES):
     period_labels_day_seq = period_labels_day[SEQ_LENGTH: SEQ_LENGTH + n_seq_day]
     all_period_labels_seq.append(period_labels_day_seq)
 
-    logger.info("Day rows: %d → %d sequences", len(features_day), n_seq_day)
+    logger.info("Day rows: %d â†’ %d sequences", len(features_day), n_seq_day)
 
     for model_type in MODEL_TYPES:
         feat_names = feature_names_map[model_type]
@@ -312,7 +255,6 @@ for file_idx, test_file in enumerate(TEST_FILES):
         scaled = scaler.transform(feat_df.values.astype(np.float32)).astype(np.float32)
         sequences = create_sequences(scaled, SEQ_LENGTH)
 
-        # ── Transformer + OC-SVM ───────────────────────────────────
         if model_type == "transformer_ocsvm":
             x_tensor = torch.tensor(sequences, dtype=torch.float32)
             ds = TensorDataset(x_tensor, x_tensor)
@@ -335,7 +277,6 @@ for file_idx, test_file in enumerate(TEST_FILES):
             del x_tensor, ds, loader
             preds = (scores >= OCSVM_BASELINE_TAU).astype(int)
 
-        # PNN + Spoofing Gain
         elif model_type == "pnn":
             target_col = "log_return"
             all_mu, all_sigma, all_alpha = [], [], []
@@ -345,8 +286,6 @@ for file_idx, test_file in enumerate(TEST_FILES):
             with torch.no_grad():
                 for start in range(0, n_seqs, BATCH_SIZE):
                     end = min(start + BATCH_SIZE, n_seqs)
-                    # PNN uses only the last time step of each sequence
-                    # (single-step predictor, matching Fabre & Challet)
                     x_batch = torch.tensor(
                         np.ascontiguousarray(sequences[start:end, -1, :]),
                         dtype=torch.float32,
@@ -368,9 +307,6 @@ for file_idx, test_file in enumerate(TEST_FILES):
             spread_seq = np.abs(spread_seq)
             spread_seq = np.where(spread_seq > 0, spread_seq, 1e-4)
 
-            # PNN outputs are in log-return units; the spoofing-gain formula
-            # (Fabre & Challet) expects EUR price changes.  Convert via the
-            # first-order approximation  Δp ≈ r · p_mid.
             mu_eur = mu_arr * mid_seq
             sigma_eur = sigma_arr * mid_seq
 
@@ -382,7 +318,6 @@ for file_idx, test_file in enumerate(TEST_FILES):
             )
             preds = (scores > 0).astype(int)
 
-        # PRAE + RFDR
         elif model_type == "prae":
             x_tensor = torch.tensor(sequences, dtype=torch.float32)
             ds = TensorDataset(x_tensor, x_tensor)
@@ -412,11 +347,9 @@ for file_idx, test_file in enumerate(TEST_FILES):
 
     day_boundaries.append(day_boundaries[-1] + n_seq_day)
 
-    # Free per-day memory
     del df_day, features_day, spread_raw_day, mid_price_day, period_labels_day, time_frac_day
     gc.collect()
 
-# Concatenate across days
 for mt in MODEL_TYPES:
     all_scores[mt] = np.concatenate(all_scores[mt])
     all_preds[mt] = np.concatenate(all_preds[mt])
@@ -430,20 +363,14 @@ for mt in MODEL_TYPES:
     n_anom = all_preds[mt].sum()
     logger.info("  %s: %d anomalies (%.2f%%)", mt, n_anom, 100 * n_anom / total_samples)
 
-# %% [markdown]
-# ## Save Results
 
-# %%
-# 1. Per-model raw scores and predictions
 for mt in MODEL_TYPES:
     np.save(os.path.join(OUTPUT_DIR, f"{mt}_scores.npy"), all_scores[mt])
     np.save(os.path.join(OUTPUT_DIR, f"{mt}_preds.npy"), all_preds[mt])
     logger.info("Saved scores & preds for %s", mt)
 
-# 2. Period labels
 np.save(os.path.join(OUTPUT_DIR, "period_labels.npy"), period_labels_seq)
 
-# 3. Day boundaries and names
 meta = {
     "day_names": day_names,
     "day_split_labels": day_split_labels,
@@ -460,7 +387,6 @@ meta = {
 with open(os.path.join(OUTPUT_DIR, "test_meta.json"), "w") as f:
     json.dump(meta, f, indent=2)
 
-# 4. Per-period anomaly rates
 rows = []
 for mt in MODEL_TYPES:
     preds = all_preds[mt]
@@ -483,7 +409,6 @@ period_df = pd.DataFrame(rows)
 period_df.to_csv(os.path.join(OUTPUT_DIR, "anomaly_rates_by_period.csv"), index=False)
 logger.info("Saved anomaly rates by period.")
 
-# 5. Per-day summary
 day_rows = []
 for day_idx, day_name in enumerate(day_names):
     lo = day_boundaries[day_idx]
@@ -509,7 +434,6 @@ day_df = pd.DataFrame(day_rows)
 day_df.to_csv(os.path.join(OUTPUT_DIR, "anomaly_rates_by_day.csv"), index=False)
 logger.info("Saved anomaly rates by day.")
 
-# 6. Consensus analysis
 n_total = min(len(all_preds[mt]) for mt in MODEL_TYPES)
 pred_matrix = np.column_stack([all_preds[mt][:n_total] for mt in MODEL_TYPES])
 n_models_flagged = pred_matrix.sum(axis=1)
@@ -527,8 +451,6 @@ consensus_df = pd.DataFrame(consensus_rows)
 consensus_df.to_csv(os.path.join(OUTPUT_DIR, "consensus_agreement.csv"), index=False)
 logger.info("Saved consensus agreement.")
 
-# 7. Root cause analysis (top features per model) — streaming
-#    Re-read files one at a time to avoid accumulating all feature data in RAM.
 rca_rows = []
 
 for mt in MODEL_TYPES:
@@ -541,7 +463,6 @@ for mt in MODEL_TYPES:
     top_idx_global = int(np.argmax(scores))
     threshold_90 = np.percentile(scores, 90)
 
-    # Online accumulators (Welford-style sums for mean/std)
     normal_sum = None
     normal_sq_sum = None
     normal_count = 0
@@ -569,7 +490,6 @@ for mt in MODEL_TYPES:
         day_preds = preds[lo:hi]
         day_scores = scores[lo:hi]
 
-        # Normal samples (preds == 0)
         nmask = day_preds == 0
         if nmask.any():
             nf = feat_arr[nmask]
@@ -581,11 +501,9 @@ for mt in MODEL_TYPES:
                 normal_sq_sum += (nf ** 2).sum(axis=0)
             normal_count += int(nmask.sum())
 
-        # Top anomaly (single highest-scoring sample globally)
         if lo <= top_idx_global < hi:
             top_feat_row = feat_arr[top_idx_global - lo]
 
-        # Top 10% anomalies
         t10mask = day_scores >= threshold_90
         if t10mask.any():
             t10 = feat_arr[t10mask]
@@ -606,7 +524,6 @@ for mt in MODEL_TYPES:
     normal_std = np.sqrt(np.maximum(normal_var, 0))
     normal_std[normal_std == 0] = 1e-10
 
-    # Top anomaly z-scores
     if top_feat_row is not None:
         z = np.abs((top_feat_row - normal_mean) / normal_std)
         order = np.argsort(z)[::-1]
@@ -620,7 +537,6 @@ for mt in MODEL_TYPES:
                 "value": round(float(top_feat_row[idx]), 6),
             })
 
-    # Top 10% mean deviation
     if top10_count > 0 and top10_sum is not None:
         top10_mean = top10_sum / top10_count
         diff = np.abs((top10_mean - normal_mean) / normal_std)
@@ -639,18 +555,10 @@ rca_df = pd.DataFrame(rca_rows)
 rca_df.to_csv(os.path.join(OUTPUT_DIR, "root_cause_analysis.csv"), index=False)
 logger.info("Saved root cause analysis.")
 
-# %% [markdown]
-# ## Proximity Analysis
-#
-# Compare metrics on $\mathcal{T}_A$ (proximate) vs. $\mathcal{T}_B$ (distal)
-# to quantify temporal proximity effects.
 
-# %%
-# 8. Per-split metrics and proximity comparison
 split_rows = []
 for mt in MODEL_TYPES:
     for split_name in ["test_proximate", "test_distal"]:
-        # Gather per-day anomaly rates for this split
         split_day_rates = []
         split_day_mean_scores = []
         total_samples_split = 0
@@ -690,11 +598,10 @@ split_df = pd.DataFrame(split_rows)
 split_df.to_csv(os.path.join(OUTPUT_DIR, "metrics_by_split.csv"), index=False)
 logger.info("Saved per-split metrics.")
 
-# 9. Welch t-test: proximate vs. distal (per-day anomaly rate)
 proximity_rows = []
 for mt in MODEL_TYPES:
-    rates_A = []  # proximate
-    rates_B = []  # distal
+    rates_A = []
+    rates_B = []
     scores_A = []
     scores_B = []
     for day_idx, day_name in enumerate(day_names):
@@ -719,7 +626,6 @@ for mt in MODEL_TYPES:
         t_rate, p_rate = float("nan"), float("nan")
         t_score, p_score = float("nan"), float("nan")
 
-    # Combined (all held-out files from this year, i.e. T_A + T_B)
     combined_rates = rates_A + rates_B
     combined_scores = scores_A + scores_B
 
@@ -752,7 +658,6 @@ logger.info("Saved proximity comparison (Welch t-test, T_A vs T_B).")
 logger.info("NOTE: small sample sizes (n_A=%d, n_B=%d) limit statistical power.",
             len(TEST_PROXIMATE_FILES), len(TEST_DISTAL_FILES))
 
-# Summary
 logger.info("=" * 70)
 logger.info("All results saved to %s", OUTPUT_DIR)
 logger.info("Files:")

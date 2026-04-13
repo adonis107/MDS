@@ -1,4 +1,4 @@
-import numpy as np
+﻿import numpy as np
 from scipy import stats
 from collections import deque
 
@@ -23,7 +23,6 @@ class RollingFalseDiscoveryRate:
             
         scores = np.array(self.history)
         
-        # Log Transform
         min_val = np.min(scores)
         if min_val <= 0:
             shift = np.abs(min_val) + 1e-6
@@ -34,7 +33,6 @@ class RollingFalseDiscoveryRate:
 
         scores_log = np.log(scores_shifted)
         
-        # Z-Score
         median_val = np.median(scores_log)
         diff = np.abs(scores_log - median_val)
         mad = np.median(diff)
@@ -45,10 +43,8 @@ class RollingFalseDiscoveryRate:
         robust_sigma = mad * 1.4826
         z_scores = (scores_log - median_val) / robust_sigma
         
-        # P-values
         p_values = stats.norm.sf(z_scores)
         
-        # Benjamini-Hochberg on the Window
         n = len(scores)
         sorted_indices = np.argsort(p_values)
         sorted_p = p_values[sorted_indices]
@@ -58,7 +54,6 @@ class RollingFalseDiscoveryRate:
         below_threshold = sorted_p <= critical_values
         
         if np.any(below_threshold):
-            # Largest p-value that is below the BH line
             k_index = np.max(np.where(below_threshold))
             threshold_idx = sorted_indices[k_index]
             threshold_raw = scores[threshold_idx]

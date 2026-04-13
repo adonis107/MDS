@@ -1,4 +1,4 @@
-import math
+﻿import math
 
 import torch
 import torch.nn as nn
@@ -8,15 +8,14 @@ from detection.base import BaseDeepModel
 from detection.models.transformer import BottleneckTransformer
 from detection.trainers.training import Trainer
 
-# Standard normal helpers (used by PRAE analytical regularization)
 _LOG_SQRT_2PI = 0.5 * math.log(2.0 * math.pi)
 
 def _standard_normal_cdf(x):
-    """Φ(x) — CDF of the standard normal distribution."""
+    """Î¦(x) â€” CDF of the standard normal distribution."""
     return 0.5 * (1.0 + torch.erf(x / math.sqrt(2.0)))
 
 def _standard_normal_log_pdf(x):
-    """log φ(x) — log-PDF of the standard normal distribution."""
+    """log Ï†(x) â€” log-PDF of the standard normal distribution."""
     return -0.5 * x * x - _LOG_SQRT_2PI
 
 
@@ -37,7 +36,6 @@ class PRAE(BaseDeepModel):
         if indices is not None and training:
             mu_batch = self.mu[indices]
 
-            # Stochastic Gate: z[i] = max(0, min(1, mu[i] + epsilon))
             noise = torch.randn_like(mu_batch) * self.sigma
             z = torch.clamp(mu_batch + noise, min=0.0, max=1.0)
 
@@ -47,13 +45,13 @@ class PRAE(BaseDeepModel):
     def _expected_z(mu, sigma):
         """Analytical E(z) for a truncated Gaussian gate clamped to [0, 1].
 
-        E(z_i) = σ/√(2π) * (exp(-μ²/(2σ²)) - exp(-(1-μ)²/(2σ²)))
-                 + (μ - 1) · Φ((1-μ)/σ)
-                 - μ · Φ(-μ/σ)
+        E(z_i) = Ïƒ/âˆš(2Ï€) * (exp(-Î¼Â²/(2ÏƒÂ²)) - exp(-(1-Î¼)Â²/(2ÏƒÂ²)))
+                 + (Î¼ - 1) Â· Î¦((1-Î¼)/Ïƒ)
+                 - Î¼ Â· Î¦(-Î¼/Ïƒ)
                  + 1
         """
-        a = -mu / sigma          # standardised lower bound
-        b = (1.0 - mu) / sigma   # standardised upper bound
+        a = -mu / sigma
+        b = (1.0 - mu) / sigma
         term1 = sigma * (_standard_normal_log_pdf(a).exp()
                          - _standard_normal_log_pdf(b).exp())
         term2 = (mu - 1.0) * _standard_normal_cdf(b)
@@ -80,25 +78,15 @@ class PRAE(BaseDeepModel):
         )
 
         rec_error = torch.sum((x - reconstructed) ** 2, dim=tuple(range(1, x.dim())))
-        # Clamp rec_error to prevent overflow to Inf.  When mu drifts
-        # negative the gate z is clamped to 0, masking that sample out of
-        # the loss.  The backbone then receives no gradient to reconstruct
-        # it, so its rec_error grows unboundedly.  In IEEE 754,
-        # 0.0 * Inf = NaN, which poisons the entire loss and all gradients.
         rec_error = torch.clamp(rec_error, max=1e6)
 
         if z is not None:
-            # PRAE-ℓ₁ loss (Lindenbaum et al.):
-            #   L = Σ z_i·‖x_i − x̂_i‖² − λ·Σ E(z_i)
-            # Reconstruction term: MC estimate using sampled z
             loss_rec = torch.mean(z * rec_error)
-            # Regularization term: analytical E(z) — smooth gradients for all μ
             mu_batch = self.mu[indices]
             ez = self._expected_z(mu_batch, self.sigma)
             loss_reg = -self.lambda_reg * torch.mean(ez)
             loss = loss_rec + loss_reg
         else:
-            # Validation: plain reconstruction loss (no stochastic gate)
             loss = torch.mean(rec_error)
 
         return loss
@@ -141,7 +129,7 @@ def calculate_reconstruction_lambda(model, train_loader, device='cuda', num_batc
     """Compute lambda from the backbone's current reconstruction error.
 
     On days 2+ the backbone is already trained, so the raw-energy heuristic
-    (ME ≈ Σ‖x‖²/N) vastly overestimates the scale at which rec errors live.
+    (ME â‰ˆ Î£â€-xâ€-Â²/N) vastly overestimates the scale at which rec errors live.
     Instead, we set lambda = mean per-sample reconstruction error, which is the
     natural break-even point: samples with error > lambda have their gates
     pushed toward 0 (anomalous), samples below toward 1 (normal).
@@ -186,11 +174,9 @@ def grid_search_lambda(train_loader, val_loader, heuristic_lambda, num_train_sam
         model = PRAE(backbone_model=base_ae, num_train_samples=num_train_samples,
                      lambda_reg=candidate).to(device)
         
-        # Train
         trainer = Trainer(epochs=epochs, device=device, learning_rate=learning_rate)
         trainer.fit(model, train_loader, val_loader)
 
-        # Evaluate reconstruction error on validation set
         model.eval()
         total_mse = 0
 
@@ -207,3 +193,4 @@ def grid_search_lambda(train_loader, val_loader, heuristic_lambda, num_train_sam
             best_lambda = candidate
         
     return best_lambda
+

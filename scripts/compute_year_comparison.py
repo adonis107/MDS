@@ -1,4 +1,4 @@
-"""Compute cross-year comparison statistics for Section 5.1 paragraphs."""
+﻿"""Compute cross-year comparison statistics for Section 5.1 paragraphs."""
 import os, sys, glob, json, math, warnings
 warnings.filterwarnings("ignore")
 
@@ -57,7 +57,6 @@ for year in [2015, 2017]:
     results_dir = os.path.join("results", str(year))
     yr = {}
 
-    # ===== TF-OC-SVM =====
     print("  TF-OC-SVM...")
     feat_names, scaler = load_features_and_scaler(results_dir, "transformer_ocsvm")
     num_features = len(feat_names)
@@ -76,7 +75,6 @@ for year in [2015, 2017]:
         os.path.join(results_dir, "transformer_ocsvm_detector.pth"),
         map_location=DEVICE, weights_only=False)
 
-    # Encode first test day
     _, _, seqs = prepare_sequences(TEST_FILES[0], feat_names, scaler)
     all_z = []
     with torch.no_grad():
@@ -88,7 +86,6 @@ for year in [2015, 2017]:
     z_all = torch.cat(all_z, dim=0)
     z_np = z_all.numpy()
 
-    # Latent stats
     dim_var = z_np.var(axis=0)
     yr["latent_mean_of_means"] = float(z_np.mean(axis=0).mean())
     yr["latent_mean_of_vars"] = float(dim_var.mean())
@@ -98,13 +95,11 @@ for year in [2015, 2017]:
     yr["latent_global_std"] = float(z_np.std())
     yr["dead_dims"] = int((dim_var < 1e-6).sum())
 
-    # Decision function + dissimilarity on test day
     decision_vals = ocsvm.decision_function(z_np)
     dissimilarity = -decision_vals
     yr["n_outliers_f0"] = int((decision_vals < 0).sum())
     yr["outlier_rate_f0"] = float(100.0 * yr["n_outliers_f0"] / len(decision_vals))
 
-    # Rec error
     rec_errors = []
     with torch.no_grad():
         for start in range(0, len(seqs), BATCH_SIZE):
@@ -120,30 +115,24 @@ for year in [2015, 2017]:
     yr["rec_error_std"] = float(rec_errors.std())
     yr["rec_dissim_corr"] = float(np.corrcoef(rec_errors, dissimilarity)[0, 1])
 
-    # Dissimilarity stats
     yr["dissim_mean"] = float(dissimilarity.mean())
     yr["dissim_std"] = float(dissimilarity.std())
     yr["dissim_median"] = float(np.median(dissimilarity))
     yr["dissim_p99"] = float(np.percentile(dissimilarity, 99))
 
-    # OC-SVM params
     yr["gamma"] = float(ocsvm._gamma)
     yr["rho"] = float(ocsvm._rho.item())
     yr["w_norm"] = float(ocsvm._w.norm().item())
 
-    # PCA
     from sklearn.decomposition import PCA
     pca = PCA(n_components=2)
     z_2d = pca.fit_transform(z_np)
     yr["pca_var_1"] = float(pca.explained_variance_ratio_[0])
     yr["pca_var_2"] = float(pca.explained_variance_ratio_[1])
 
-    # Tau / training scores (from all test days for detection rate)
-    # Load test_output scores for fraction above tau
     test_scores_path = os.path.join(results_dir, "test_output", "transformer_ocsvm_scores.npy")
     test_scores_all = np.load(test_scores_path)
     
-    # tau value
     year_files = sorted(glob.glob(os.path.join(DATA_DIR, f"{year}*.parquet")))
     train_files = year_files[:len(year_files) - NUM_HOLDOUT]
     train_scores_all = []
@@ -194,7 +183,6 @@ for year in [2015, 2017]:
     print(f"    rec_dissim_corr={yr['rec_dissim_corr']:.4f}")
     print(f"    latent var: mean={yr['latent_mean_of_vars']:.4f}, range=[{yr['latent_min_var']:.4f}, {yr['latent_max_var']:.4f}]")
 
-    # ===== PNN =====
     print("  PNN...")
     feat_names_pnn, scaler_pnn = load_features_and_scaler(results_dir, "pnn")
     model_pnn = PNN(input_dim=len(feat_names_pnn), hidden_dim=64).to(DEVICE)
@@ -221,7 +209,6 @@ for year in [2015, 2017]:
     y_raw = features_test[feat_names_pnn].values[
         SEQ_LENGTH:SEQ_LENGTH + len(mu_arr), target_idx].astype(np.float32)
 
-    # NLL
     y_t = torch.tensor(y_raw).unsqueeze(1)
     mu_t = torch.tensor(mu_arr).unsqueeze(1)
     sigma_t = torch.tensor(sigma_arr).unsqueeze(1)
@@ -244,7 +231,6 @@ for year in [2015, 2017]:
     yr["pnn_nll_p99"] = float(np.percentile(nll, 99))
     yr["pnn_nll_p95"] = float(np.percentile(nll, 95))
 
-    # Spoofing gain
     from scipy.special import erf as sp_erf, owens_t
     def _fast_skewnorm_cdf(x, mu, sigma, alpha):
         z = (np.asarray(x, dtype=np.float64) - mu) / sigma
@@ -287,7 +273,6 @@ for year in [2015, 2017]:
     print(f"    nll: mean={yr['pnn_nll_mean']:.2f}, p99={yr['pnn_nll_p99']:.2f}")
     print(f"    gain: pct_positive={yr['pnn_gain_pct_positive']:.3f}%, mean={yr['pnn_gain_mean']:.2f}")
 
-    # ===== PRAE =====
     print("  PRAE...")
     feat_names_prae, scaler_prae = load_features_and_scaler(results_dir, "prae")
     weights_path = os.path.join(results_dir, "prae_weights.pth")
@@ -295,15 +280,12 @@ for year in [2015, 2017]:
     num_train_samples = state_dict["mu"].shape[0]
     mu_values = state_dict["mu"].numpy()
 
-    # Get lambda from config or compute it
-    # lambda = 1 / (2 * contamination * n) as the auto heuristic
     yr["prae_n_train"] = int(num_train_samples)
     yr["prae_mu_mean"] = float(mu_values.mean())
     yr["prae_mu_std"] = float(mu_values.std())
     yr["prae_mu_min"] = float(mu_values.min())
     yr["prae_mu_max"] = float(mu_values.max())
 
-    # Load model for test-time reconstruction error
     backbone = BottleneckTransformer(
         num_features=len(feat_names_prae), model_dim=128, num_heads=8,
         num_layers=6, representation_dim=128, sequence_length=SEQ_LENGTH,
@@ -320,7 +302,6 @@ for year in [2015, 2017]:
     model_prae.eval()
 
     _, _, seqs_prae = prepare_sequences(TEST_FILES[0], feat_names_prae, scaler_prae)
-    # Subsample
     if len(seqs_prae) > 10000:
         sub_i = np.random.choice(len(seqs_prae), 10000, replace=False)
         seqs_prae = seqs_prae[sub_i]
@@ -348,7 +329,6 @@ for year in [2015, 2017]:
 
     stats[str(year)] = yr
 
-# Print summary
 print("\n" + "="*60)
 print("CROSS-YEAR COMPARISON SUMMARY")
 print("="*60)
@@ -389,7 +369,6 @@ print(f"  Score mean: 2015={s15['prae_score_mean']:.2f}, 2017={s17['prae_score_m
 print(f"  Score P99: 2015={s15['prae_score_p99']:.2f}, 2017={s17['prae_score_p99']:.2f}")
 print(f"  Score std: 2015={s15['prae_score_std']:.2f}, 2017={s17['prae_score_std']:.2f}")
 
-# Save
 out = os.path.join("figures", "diagnostics", "year_comparison_stats.json")
 with open(out, "w") as f:
     json.dump(stats, f, indent=2)

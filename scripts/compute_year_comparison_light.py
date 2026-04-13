@@ -1,4 +1,4 @@
-"""Lightweight cross-year comparison using pre-computed artifacts only (no inference)."""
+﻿"""Lightweight cross-year comparison using pre-computed artifacts only (no inference)."""
 import os, sys, json, glob
 import numpy as np
 import torch
@@ -16,12 +16,10 @@ for year in [2015, 2017]:
     test_dir = os.path.join(results_dir, "test_output")
     yr = {}
 
-    # ===== TF-OC-SVM: from detector object + pre-computed scores =====
     print("  TF-OC-SVM...")
     ocsvm = torch.load(
         os.path.join(results_dir, "transformer_ocsvm_detector.pth"),
         map_location="cpu", weights_only=False)
-    # Move all ocsvm tensors to CPU
     for attr in ['_landmarks', '_w', '_rho', '_normalization']:
         if hasattr(ocsvm, attr):
             val = getattr(ocsvm, attr)
@@ -32,7 +30,6 @@ for year in [2015, 2017]:
     yr["w_norm"] = float(ocsvm._w.norm().item())
     yr["n_landmarks"] = int(ocsvm._landmarks.shape[0])
 
-    # Nystrom spectrum from landmarks
     K_CC = ocsvm._rbf_kernel(ocsvm._landmarks, ocsvm._landmarks)
     eigvals = np.linalg.eigvalsh(K_CC.cpu().numpy())
     eigvals = np.sort(eigvals)[::-1]
@@ -41,7 +38,6 @@ for year in [2015, 2017]:
     yr["effective_rank_95"] = int(np.searchsorted(cumvar, 0.95) + 1)
     yr["condition_number"] = float(eigvals_pos[0] / eigvals_pos[-1]) if len(eigvals_pos) > 1 else float("inf")
 
-    # Pre-computed test scores (dissimilarity)
     tfocsvm_scores = np.load(os.path.join(test_dir, "transformer_ocsvm_scores.npy"))
     yr["dissim_mean"] = float(tfocsvm_scores.mean())
     yr["dissim_std"] = float(tfocsvm_scores.std())
@@ -50,10 +46,8 @@ for year in [2015, 2017]:
     yr["dissim_p99"] = float(np.percentile(tfocsvm_scores, 99))
     yr["n_test_total"] = int(len(tfocsvm_scores))
 
-    # Fraction with dissimilarity > 0 (i.e., f < 0 => outlier by OC-SVM boundary)
     yr["pct_above_zero"] = float(100 * np.mean(tfocsvm_scores > 0))
 
-    # Tau from training scores
     from detection.models.ocsvm import OCSVM as _OCSVM
     from detection.data.loaders import create_sequences, load_processed
     from detection.data.preprocessing import split_first_hour_blocks
@@ -71,10 +65,6 @@ for year in [2015, 2017]:
         feat_names = [line.strip() for line in f if line.strip()]
     sc = joblib.load(os.path.join(results_dir, "transformer_ocsvm_scaler.pkl"))
 
-    # We need tau but computing it requires encoding training data through transformer.
-    # Use known values from prior computation for 2015, compute for 2017 from stats.
-    # Actually, let's just load the transformer once to compute tau from training data
-    # but only for 3 days. Do it efficiently with subsample.
     transformer = BottleneckTransformer(
         num_features=len(feat_names), model_dim=128, num_heads=8,
         num_layers=6, representation_dim=128, sequence_length=SEQ_LENGTH,
@@ -83,7 +73,6 @@ for year in [2015, 2017]:
     state = torch.load(
         os.path.join(results_dir, "transformer_ocsvm_weights.pth"),
         map_location="cpu", weights_only=True)
-    # Ensure all tensors on CPU
     state = {k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in state.items()}
     transformer.load_state_dict(state)
     transformer.eval().cpu()
@@ -107,7 +96,6 @@ for year in [2015, 2017]:
             seqs_block = create_sequences(scaled_block, SEQ_LENGTH)
             if len(seqs_block) == 0:
                 continue
-            # Subsample: max 5000 sequences for speed
             if len(seqs_block) > 5000:
                 idx = np.random.choice(len(seqs_block), 5000, replace=False)
                 seqs_block = seqs_block[idx]
@@ -136,7 +124,6 @@ for year in [2015, 2017]:
     yr["test_pct_above_tau"] = float(100 * np.mean(tfocsvm_scores >= yr["tau"]))
     yr["test_n_above_tau"] = int(np.sum(tfocsvm_scores >= yr["tau"]))
 
-    # Also encode first test day for rec error + latent stats (subsample to 5000)
     FILES = sorted(glob.glob(os.path.join(DATA_DIR, "*.parquet")))
     TEST_FILES = [FILES[22], FILES[23], FILES[24], FILES[25], FILES[26]]
 
@@ -147,7 +134,6 @@ for year in [2015, 2017]:
     feat_t = feat_t[feat_names]
     scaled_t = sc.transform(feat_t.values.astype(np.float32)).astype(np.float32)
     seqs_test = create_sequences(scaled_t, SEQ_LENGTH)
-    # Subsample for speed
     if len(seqs_test) > 5000:
         sub_idx = np.random.choice(len(seqs_test), 5000, replace=False)
         seqs_test = seqs_test[sub_idx]
@@ -181,19 +167,17 @@ for year in [2015, 2017]:
     yr["rec_error_p99"] = float(np.percentile(rec_errors, 99))
     yr["rec_error_std"] = float(rec_errors.std())
 
-    # Rec-dissim correlation on subsample
     decision_vals = ocsvm.decision_function(z_np)
     dissim_sub = -decision_vals
     yr["rec_dissim_corr"] = float(np.corrcoef(rec_errors, dissim_sub)[0, 1])
 
-    # PCA
     from sklearn.decomposition import PCA
     pca = PCA(n_components=2)
     pca.fit(z_np)
     yr["pca_var_1"] = float(pca.explained_variance_ratio_[0])
     yr["pca_var_2"] = float(pca.explained_variance_ratio_[1])
 
-    del transformer  # free memory
+    del transformer
 
     print(f"    tau={yr['tau']:.6f}, test_pct_above_tau={yr['test_pct_above_tau']:.4f}%")
     print(f"    rec_error: mean={yr['rec_error_mean']:.6f}, p99={yr['rec_error_p99']:.6f}")
@@ -201,7 +185,6 @@ for year in [2015, 2017]:
     print(f"    latent var: mean={yr['latent_mean_of_vars']:.4f}")
     print(f"    PCA: ({yr['pca_var_1']:.4f}, {yr['pca_var_2']:.4f})")
 
-    # ===== PNN =====
     print("  PNN...")
     pnn_scores = np.load(os.path.join(test_dir, "pnn_scores.npy"))
     yr["pnn_score_mean"] = float(pnn_scores.mean())
@@ -211,7 +194,6 @@ for year in [2015, 2017]:
     yr["pnn_score_p99"] = float(np.percentile(pnn_scores, 99))
     yr["pnn_n_total"] = int(len(pnn_scores))
 
-    # PNN parameters from inference on test file - need model
     feat_path_pnn = os.path.join(results_dir, "pnn_features.txt")
     with open(feat_path_pnn) as f:
         feat_names_pnn = [line.strip() for line in f if line.strip()]
@@ -234,7 +216,6 @@ for year in [2015, 2017]:
     scaled_pnn = sc_pnn.transform(feat_pnn.values.astype(np.float32)).astype(np.float32)
     seqs_pnn = create_sequences(scaled_pnn, SEQ_LENGTH)
 
-    # Subsample PNN for parameter stats
     N_PNN = min(20000, len(seqs_pnn))
     pnn_idx = np.random.choice(len(seqs_pnn), N_PNN, replace=False)
     seqs_pnn_sub = seqs_pnn[pnn_idx]
@@ -260,7 +241,6 @@ for year in [2015, 2017]:
     yr["pnn_alpha_mean"] = float(alpha_arr.mean())
     yr["pnn_alpha_std"] = float(alpha_arr.std())
 
-    # NLL from parameters
     import math
     target_idx = feat_names_pnn.index("log_return")
     y_raw = feat_pnn.values[SEQ_LENGTH + pnn_idx, target_idx].astype(np.float32)
@@ -274,7 +254,6 @@ for year in [2015, 2017]:
     yr["pnn_nll_p99"] = float(np.percentile(nll, 99))
     yr["pnn_nll_p95"] = float(np.percentile(nll, 95))
 
-    # Spoofing gain (subsample)
     from scipy.special import erf as sp_erf, owens_t
     def _fast_skewnorm_cdf(x, mu, sigma, alpha):
         z = (np.asarray(x, dtype=np.float64) - mu) / sigma
@@ -311,7 +290,6 @@ for year in [2015, 2017]:
     print(f"    nll: mean={yr['pnn_nll_mean']:.2f}, p99={yr['pnn_nll_p99']:.2f}")
     print(f"    gain: pct_positive={yr['pnn_gain_pct_positive']:.3f}%, mean={yr['pnn_gain_mean']:.2f}")
 
-    # ===== PRAE =====
     print("  PRAE...")
     prae_scores = np.load(os.path.join(test_dir, "prae_scores.npy"))
     yr["prae_test_score_mean"] = float(prae_scores.mean())
@@ -321,7 +299,6 @@ for year in [2015, 2017]:
     yr["prae_test_score_p99"] = float(np.percentile(prae_scores, 99))
     yr["prae_n_test"] = int(len(prae_scores))
 
-    # Mu from state dict
     state_dict = torch.load(
         os.path.join(results_dir, "prae_weights.pth"),
         map_location="cpu", weights_only=True)
@@ -338,7 +315,6 @@ for year in [2015, 2017]:
 
     stats[str(year)] = yr
 
-# Print comparison summary
 print("\n" + "="*60)
 print("CROSS-YEAR COMPARISON SUMMARY")
 print("="*60)

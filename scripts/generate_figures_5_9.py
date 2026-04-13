@@ -1,4 +1,4 @@
-"""
+﻿"""
 Cross-year robustness analysis for Section 5.9.
 
 Compares anomaly rates, score distributions, and detection overlap
@@ -18,7 +18,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from scipy.stats import gaussian_kde
 
-# ── Constants ───────────────────────────────────────────────────────
 OUT_DIR = os.path.join("figures", "results")
 os.makedirs(OUT_DIR, exist_ok=True)
 
@@ -49,7 +48,6 @@ def save_fig(fig, name):
     print(f"  saved {path}")
 
 
-# ── Helpers ─────────────────────────────────────────────────────────
 
 def load_meta(year):
     with open(os.path.join("results", year, "test_output", "test_meta.json")) as f:
@@ -101,18 +99,14 @@ def inyear_test_day_names(meta):
             if l in ("test_proximate", "test_distal")]
 
 
-# ── Main ────────────────────────────────────────────────────────────
 
 def main():
-    print("Loading metadata …")
+    print("Loading metadata â€¦")
     metas = {y: load_meta(y) for y in YEARS}
     dbounds = {y: day_bounds_dict(metas[y]) for y in YEARS}
 
-    # ================================================================
-    # 1.  Anomaly rates  (in-year test vs full cross-year)
-    # ================================================================
-    print("\n── Anomaly rates ──")
-    rates = {}                      # rates[train][scope][model]
+    print("\nâ”€â”€ Anomaly rates â”€â”€")
+    rates = {}
     for ty in YEARS:
         rates[ty] = {"in_year": {}, "cross_year": {}}
         iy = split_slice(metas[ty])
@@ -129,8 +123,7 @@ def main():
                   f"in-year = {rates[ty]['in_year'][mt]:7.3f}%   "
                   f"cross ({cy}) = {rates[ty]['cross_year'][mt]:7.3f}%")
 
-    # ── Figure 1: grouped-bar anomaly-rate comparison ───────────────
-    print("\nFigure 1 …")
+    print("\nFigure 1 â€¦")
     fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
     bw = 0.30
     x = np.arange(len(MODEL_TYPES))
@@ -167,10 +160,7 @@ def main():
     fig.tight_layout()
     save_fig(fig, "fig_5_9_anomaly_rate.pdf")
 
-    # ================================================================
-    # 2.  Score-distribution shift  (KDE, 2 × 3 grid)
-    # ================================================================
-    print("\nFigure 2 …")
+    print("\nFigure 2 â€¦")
     fig, axes = plt.subplots(2, 3, figsize=(12, 6))
     rng = np.random.default_rng(42)
 
@@ -186,7 +176,6 @@ def main():
             iy_s = np.asarray(scores[iy[0]:iy[1]], dtype=np.float64)
             cx_s = np.asarray(scores[cx[0]:cx[1]], dtype=np.float64)
 
-            # Remove non-finite values
             iy_s = iy_s[np.isfinite(iy_s)]
             cx_s = cx_s[np.isfinite(cx_s)]
 
@@ -220,10 +209,7 @@ def main():
     del scores, iy_s, cx_s
     gc.collect()
 
-    # ================================================================
-    # 3.  Detection overlap  (Jaccard on shared test days)
-    # ================================================================
-    print("\nFigure 3 …")
+    print("\nFigure 3 â€¦")
     jaccard_rows = []
 
     for target_year in YEARS:
@@ -266,7 +252,6 @@ def main():
                   f"J = {j:.4f}  (inter={inter:,}, union={union:,}, "
                   f"n_iy={n_iy:,}, n_cx={n_cx:,})")
 
-    # Plot
     fig, ax = plt.subplots(figsize=(7, 4))
     x = np.arange(len(MODEL_TYPES))
     bw = 0.30
@@ -294,7 +279,6 @@ def main():
     fig.tight_layout()
     save_fig(fig, "fig_5_9_detection_overlap.pdf")
 
-    # ── Summary CSV ─────────────────────────────────────────────────
     rows = []
     for ty in YEARS:
         cy = "2017" if ty == "2015" else "2015"

@@ -1,19 +1,15 @@
-#!/usr/bin/env python
+﻿#!/usr/bin/env python
 """
 CLI entry point for the Market Manipulation Detection pipeline.
 
 Usage examples
 --------------
-    # Run with defaults
     python run.py
 
-    # Specify a config file
     python run.py -c config/default.yaml
 
-    # Override model type and epochs from the command line
     python run.py --model pnn --epochs 100
 
-    # Change data path and device
     python run.py --data data/other_book.parquet --device cpu
 """
 
@@ -27,9 +23,6 @@ from detection.pipeline import AnomalyDetectionPipeline, load_config
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Logging setup
-# ---------------------------------------------------------------------------
 
 def setup_logging(level: str = "INFO") -> None:
     """Configure root logger with timestamped output to stdout."""
@@ -42,9 +35,6 @@ def setup_logging(level: str = "INFO") -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Argument parsing
-# ---------------------------------------------------------------------------
 
 def parse_args() -> argparse.Namespace:
     """Build and parse command-line arguments."""
@@ -123,9 +113,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-# ---------------------------------------------------------------------------
-# Config overrides
-# ---------------------------------------------------------------------------
 
 def apply_overrides(config: Dict, args: argparse.Namespace) -> Dict:
     """Merge CLI overrides into the loaded configuration dictionary."""
@@ -150,9 +137,6 @@ def apply_overrides(config: Dict, args: argparse.Namespace) -> Dict:
     return config
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def main() -> None:
     """Parse arguments, load config, run the full pipeline."""

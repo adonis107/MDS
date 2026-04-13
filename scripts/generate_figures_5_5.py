@@ -1,4 +1,4 @@
-"""
+﻿"""
 Generate figures for Section 5.5 (Spoofing Gain Analysis).
 
 The PNN "scores" saved in pnn_scores.npy are the spoofing gain G
@@ -20,11 +20,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
-# ── Output directory ────────────────────────────────────────────────
 OUT_DIR = os.path.join("figures", "results")
 os.makedirs(OUT_DIR, exist_ok=True)
 
-# ── Plot style ──────────────────────────────────────────────────────
 plt.rcParams.update({
     "font.size": 10,
     "axes.titlesize": 11,
@@ -78,7 +76,6 @@ def load_data(year):
     return out
 
 
-# ── Figure 5.5.1: Gain distribution ────────────────────────────────
 def fig_gain_distribution(data_by_year):
     fig, axes = plt.subplots(1, 2, figsize=(10, 3.5))
 
@@ -86,12 +83,10 @@ def fig_gain_distribution(data_by_year):
         d = data_by_year[year]
         G = d["G"][d["fin"]]
 
-        # Clip extreme tails for visualization
         lo, hi = np.percentile(G, [0.5, 99.5])
         G_clip = G[(G >= lo) & (G <= hi)]
 
         if G_clip.std() < 1e-6:
-            # Degenerate distribution (2015): show a bar at zero
             ax.hist(G_clip, bins=100, color=BLUE, alpha=0.7, edgecolor="white",
                     linewidth=0.3)
             ax.set_xlabel("Spoofing gain $G$")
@@ -111,9 +106,7 @@ def fig_gain_distribution(data_by_year):
     save_fig(fig, "fig_5_5_gain_distribution.pdf")
 
 
-# ── Figure 5.5.2: Gain vs. anomaly score scatter ───────────────────
 def fig_gain_vs_score(data_by_year):
-    # Only TF-OCSVM and PRAE (PNN score IS the gain)
     score_models = ["transformer_ocsvm", "prae"]
     fig, axes = plt.subplots(2, 2, figsize=(10, 7))
 
@@ -129,12 +122,10 @@ def fig_gain_vs_score(data_by_year):
             s = d[f"{m}_scores"][fin]
             p = d[f"{m}_preds"][fin]
 
-            # Subsample
             n = min(5000, len(G))
             idx = rng.choice(len(G), n, replace=False)
             Gs, ss, ps = G[idx], s[idx], p[idx]
 
-            # Plot non-flagged first (grey), then flagged (red)
             nf = ps == 0
             ax.scatter(Gs[nf], ss[nf], s=4, c=GREY, alpha=0.3, rasterized=True)
             fl = ps == 1
@@ -142,13 +133,11 @@ def fig_gain_vs_score(data_by_year):
                 ax.scatter(Gs[fl], ss[fl], s=8, c=RED, alpha=0.6,
                            edgecolors="white", linewidths=0.3, rasterized=True)
 
-            # Spearman on this subsample
             rho, _ = sp_stats.spearmanr(Gs, ss)
             ax.set_title(f"{MODEL_LABELS[m]}, {year}  ($\\rho_s = {rho:.3f}$)")
             ax.set_xlabel("Spoofing gain $G$")
             ax.set_ylabel("Anomaly score")
 
-    # Custom legend
     handles = [Line2D([0], [0], marker="o", color="w", markerfacecolor=GREY,
                        markersize=5, label="Not flagged"),
                Line2D([0], [0], marker="o", color="w", markerfacecolor=RED,
@@ -159,7 +148,6 @@ def fig_gain_vs_score(data_by_year):
     save_fig(fig, "fig_5_5_gain_vs_score.pdf")
 
 
-# ── Figure 5.5.3: Gain KDE, flagged vs. non-flagged ────────────────
 def fig_gain_flagged_kde(data_by_year):
     fig, axes = plt.subplots(3, 2, figsize=(10, 9))
     rng = np.random.default_rng(42)
@@ -175,18 +163,16 @@ def fig_gain_flagged_kde(data_by_year):
             flagged = G[p == 1]
             nonflagged = G[p == 0]
 
-            # Subsample for KDE
             n_kde = 20000
             if len(flagged) > n_kde:
                 flagged = flagged[rng.choice(len(flagged), n_kde, replace=False)]
             if len(nonflagged) > n_kde:
                 nonflagged = nonflagged[rng.choice(len(nonflagged), n_kde, replace=False)]
 
-            # Clip to common range for visualization
             lo = min(np.percentile(flagged, 1), np.percentile(nonflagged, 1))
             hi = max(np.percentile(flagged, 99), np.percentile(nonflagged, 99))
             if hi - lo < 1e-6:
-                hi = lo + 1e-3  # avoid degenerate range
+                hi = lo + 1e-3
 
             bins = np.linspace(lo, hi, 120)
             ax.hist(nonflagged, bins=bins, density=True, alpha=0.5, color=GREY,
@@ -205,9 +191,7 @@ def fig_gain_flagged_kde(data_by_year):
     save_fig(fig, "fig_5_5_gain_flagged_kde.pdf")
 
 
-# ── Figure 5.5.4: Mean gain by score decile ────────────────────────
 def fig_gain_by_decile(data_by_year):
-    # Only TF-OCSVM and PRAE (PNN score = gain, so trivially monotone)
     score_models = ["transformer_ocsvm", "prae"]
     fig, axes = plt.subplots(2, 2, figsize=(10, 7))
     rng = np.random.default_rng(42)
@@ -221,12 +205,10 @@ def fig_gain_by_decile(data_by_year):
             ax = axes[row, col]
             s = d[f"{m}_scores"][fin]
 
-            # Subsample for speed
             n_sub = min(500000, len(G))
             idx = rng.choice(len(G), n_sub, replace=False)
             Gs, ss = G[idx], s[idx]
 
-            # Compute deciles
             decile_edges = np.percentile(ss, np.arange(0, 110, 10))
             decile_labels = np.digitize(ss, decile_edges[1:-1])
 
@@ -251,7 +233,6 @@ def fig_gain_by_decile(data_by_year):
     save_fig(fig, "fig_5_5_gain_by_decile.pdf")
 
 
-# ── Compute statistics table ────────────────────────────────────────
 def compute_stats(data_by_year):
     """Compute Spearman correlations and Mann-Whitney tests."""
     rng = np.random.default_rng(42)
@@ -266,15 +247,13 @@ def compute_stats(data_by_year):
             s = d[f"{m}_scores"][fin]
             p = d[f"{m}_preds"][fin]
 
-            # Spearman (subsample)
             if m == "pnn":
-                rho, p_rho = 1.0, 0.0  # score IS the gain
+                rho, p_rho = 1.0, 0.0
             else:
                 n_sub = min(100000, len(G))
                 idx = rng.choice(len(G), n_sub, replace=False)
                 rho, p_rho = sp_stats.spearmanr(s[idx], G[idx])
 
-            # Mann-Whitney: G in flagged vs non-flagged
             flagged_G = G[p == 1]
             nonflagged_G = G[p == 0]
             n_f, n_nf = len(flagged_G), len(nonflagged_G)
@@ -300,7 +279,6 @@ def compute_stats(data_by_year):
     return df
 
 
-# ── Main ────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("Loading data...")
     data_by_year = {year: load_data(year) for year in YEARS}

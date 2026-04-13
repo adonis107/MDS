@@ -1,4 +1,4 @@
-import numpy as np
+﻿import numpy as np
 import pandas as pd
 
 
@@ -20,17 +20,12 @@ def compute_weighted_imbalance(df, weights=None, levels=5):
     weighted_ask = sum(weights[i] * df[f"ask-volume-{i+1}"] for i in range(levels))
 
     imbalance = weighted_bid / (weighted_bid + weighted_ask)
-    # clean numerical issues
     imbalance = imbalance.replace([np.inf, -np.inf], np.nan).fillna(0)
     return imbalance
 
 
 def compute_imbalance(df):
-    ### Imbalances ###
-    # Order book imbalance
-    # Values close to 1 indicate strong buy pressure, close to -1 indicate sell pressure
     df["L1_Imbalance"] = (df['bid-volume-1'] - df['ask-volume-1']) / (df['bid-volume-1'] + df['ask-volume-1'])
-    # Imbalance across top 5 levels, to detect layering (volume deep in the book)
     total_bid_volume_5 = df[[f'bid-volume-{i}' for i in range(1, 6)]].sum(axis=1)
     total_ask_volume_5 = df[[f'ask-volume-{i}' for i in range(1, 6)]].sum(axis=1)
     df["L5_Imbalance"] = (total_bid_volume_5 - total_ask_volume_5) / (total_bid_volume_5 + total_ask_volume_5)

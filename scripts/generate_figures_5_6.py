@@ -1,4 +1,4 @@
-"""
+﻿"""
 Compute feature attributions and generate figures for Section 5.6.
 
 Applies Integrated Gradients (PNN, PRAE) and Grouped Occlusion (TF-OCSVM)
@@ -29,13 +29,12 @@ from detection.sensitivity.integrated_gradients import (
 )
 from detection.sensitivity.occlusion import GroupedOcclusion, group_features
 
-# ── Constants ───────────────────────────────────────────────────────
 OUT_DIR = os.path.join("figures", "results")
 os.makedirs(OUT_DIR, exist_ok=True)
 
 SEQ_LENGTH = 25
 DEVICE = torch.device("cpu")
-N_ATTR_SAMPLES = 150        # flagged windows per model per year
+N_ATTR_SAMPLES = 150
 
 YEARS = ["2015", "2017"]
 MODELS_IG = ["pnn", "prae"]
@@ -78,7 +77,6 @@ def save_fig(fig, name):
     print(f"  saved {path}")
 
 
-# ── Helpers ─────────────────────────────────────────────────────────
 def load_feature_names(year):
     with open(f"results/{year}/pnn_features.txt") as f:
         return [line.strip() for line in f if line.strip()]
@@ -109,7 +107,6 @@ def _flagged_in_test(preds, meta):
     return np.where(mask & (preds == 1))[0]
 
 
-# ── PNN wrapper for IG (2-D → 3-D adapter) ─────────────────────────
 class _PNNIGWrapper(nn.Module):
     """Wraps PNN so IG can pass (batch, 1, feat) tensors."""
     def __init__(self, pnn):
@@ -117,11 +114,9 @@ class _PNNIGWrapper(nn.Module):
         self.pnn = pnn
 
     def forward(self, x):
-        # x: (batch, 1, feat) from IG interpolation
         return self.pnn(x.squeeze(1))
 
 
-# ── TF-OCSVM assembly for Grouped Occlusion ────────────────────────
 class _DetectorShell:
     """Lightweight object with the interface GroupedOcclusion expects."""
     def __init__(self, transformer, ocsvm):
@@ -133,14 +128,11 @@ class _DetectorShell:
         return self.transformer.device
 
 
-# ── Sequence reconstruction ─────────────────────────────────────────
 def _load_day_raw_features(path, feature_names):
     """Load a day parquet and return raw feature array (unscaled)."""
-    # Read only the columns we need — much faster for 573 MB files
     try:
         df = pd.read_parquet(path, columns=feature_names)
     except Exception:
-        # Fallback: some columns may be missing in parquet
         full = pd.read_parquet(path)
         available = [c for c in feature_names if c in full.columns]
         df = full[available].copy()
@@ -165,17 +157,14 @@ def extract_all_models_year(year, feature_names, n_samples, rng):
 
     MODEL_TYPES = ["pnn", "prae", "transformer_ocsvm"]
 
-    # 1. Load predictions to know which windows are flagged per model
     model_preds = {}
     for mt in MODEL_TYPES:
         model_preds[mt] = np.load(f"results/{year}/test_output/{mt}_preds.npy")
         flagged_total = _flagged_in_test(model_preds[mt], meta)
         print(f"  {mt}: {len(flagged_total)} flagged test windows")
 
-    # 2. Load scalers
     scalers = {mt: joblib.load(f"results/{year}/{mt}_scaler.pkl") for mt in MODEL_TYPES}
 
-    # 3. Stream through test days, greedily fill from each day's flagged set
     collected = {mt: [] for mt in MODEL_TYPES}
     valid_chosen = {mt: [] for mt in MODEL_TYPES}
     data_dir = "data/processed/TOTF.PA-book"
@@ -200,17 +189,14 @@ def extract_all_models_year(year, feature_names, n_samples, rng):
             still_need = n_samples - len(collected[mt])
             if still_need <= 0:
                 continue
-            # Find ALL flagged indices in this day
             day_preds = model_preds[mt][day_start:day_end]
-            day_flagged = np.where(day_preds == 1)[0]  # local indices within day
+            day_flagged = np.where(day_preds == 1)[0]
             if len(day_flagged) == 0:
                 continue
-            # Randomly pick up to still_need from this day's flagged set
             pick = rng.choice(day_flagged,
                               size=min(still_need, len(day_flagged)),
                               replace=False)
             pick.sort()
-            # Scale and extract windows
             scaled = scalers[mt].transform(raw).astype(np.float32)
             seqs = create_sequences(scaled, SEQ_LENGTH)
             cnt = 0
@@ -225,7 +211,6 @@ def extract_all_models_year(year, feature_names, n_samples, rng):
         del raw; gc.collect()
         print("  ".join(counts))
 
-    # 4. Stack into tensors
     result = {}
     for mt in MODEL_TYPES:
         if collected[mt]:
@@ -240,7 +225,6 @@ def extract_all_models_year(year, feature_names, n_samples, rng):
     return result
 
 
-# ── IG computation ──────────────────────────────────────────────────
 def compute_pnn_ig(year, seqs, num_features, n_steps=30):
     """IG for PNN.  seqs: (N, 25, num_features). Uses last timestep only."""
     pnn, _ = load_model("pnn", num_features,
@@ -253,7 +237,6 @@ def compute_pnn_ig(year, seqs, num_features, n_steps=30):
     for i in range(n):
         if i % 50 == 0:
             print(f"    PNN IG: {i}/{n}", end="\r")
-        # Last-timestep only, shaped (1, 1, 96) for IG
         x = seqs[i:i + 1, -1:, :]
         try:
             a = ig.attribute(x, target_func=maximize_sigma, n_steps=n_steps)
@@ -280,7 +263,6 @@ def compute_prae_ig(year, seqs, num_features, n_steps=30):
         x = seqs[i:i + 1]
         try:
             a = ig.attribute(x, target_func=maximize_rec_error, n_steps=n_steps)
-            # Average |IG| over time → (96,)
             attribs.append(a.squeeze(0).abs().mean(dim=0).detach().cpu().numpy())
         except Exception:
             attribs.append(np.zeros(num_features))
@@ -315,7 +297,6 @@ def compute_grouped_occlusion(year, seqs, feature_names, num_features):
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
 
-# ── Figure functions ────────────────────────────────────────────────
 def fig_ig_bar_charts(ig_results, feature_names, feature_types):
     """Mean |IG| top-20 features for PNN and PRAE, both years."""
     for mt in MODELS_IG:
@@ -477,7 +458,6 @@ def fig_gain_split_ig(ig_results, year, flagged_chosen, feature_names, feature_t
     save_fig(fig, f"fig_5_6_gain_split_ig_{year}.pdf")
 
 
-# ── Main ────────────────────────────────────────────────────────────
 def main():
     rng = np.random.default_rng(42)
     feature_names = load_feature_names("2015")
@@ -492,11 +472,9 @@ def main():
     for year in YEARS:
         print(f"\n{'='*60}\nYear {year}\n{'='*60}")
 
-        # Extract windows for all 3 models in one pass through day files
         print("\n--- Extracting flagged windows ---")
         extracted = extract_all_models_year(year, feature_names, N_ATTR_SAMPLES, rng)
 
-        # ── PNN IG ──
         print(f"\n--- PNN IG ({year}) ---")
         seqs, chosen = extracted["pnn"]
         flagged_chosen[(year, "pnn")] = chosen
@@ -505,7 +483,6 @@ def main():
         else:
             ig_results[(year, "pnn")] = None
 
-        # ── PRAE IG ──
         print(f"\n--- PRAE IG ({year}) ---")
         seqs, chosen = extracted["prae"]
         flagged_chosen[(year, "prae")] = chosen
@@ -514,7 +491,6 @@ def main():
         else:
             ig_results[(year, "prae")] = None
 
-        # ── TF-OCSVM Occlusion ──
         print(f"\n--- TF-OCSVM Occlusion ({year}) ---")
         seqs, chosen = extracted["transformer_ocsvm"]
         flagged_chosen[(year, "transformer_ocsvm")] = chosen
@@ -526,7 +502,6 @@ def main():
 
         del extracted; gc.collect()
 
-    # ── Save arrays ──
     print("\n--- Saving attribution arrays ---")
     for (yr, mt), arr in ig_results.items():
         if arr is not None:
@@ -537,7 +512,6 @@ def main():
             p = os.path.join(OUT_DIR, f"occlusion_tf_ocsvm_{yr}.csv")
             df.to_csv(p, index=False); print(f"  saved {p}")
 
-    # ── Figures ──
     print("\n--- Generating figures ---")
     fig_ig_bar_charts(ig_results, feature_names, feature_types)
     fig_ig_variance(ig_results, feature_names, feature_types)
@@ -546,7 +520,6 @@ def main():
     for yr in YEARS:
         fig_gain_split_ig(ig_results, yr, flagged_chosen, feature_names, feature_types)
 
-    # ── Summary for LaTeX ──
     print("\n\n=== SUMMARY FOR LATEX ===")
     for (yr, mt), arr in sorted(ig_results.items()):
         if arr is None:

@@ -1,26 +1,7 @@
-#!/bin/bash
-# ============================================================
-#  Slurm job script — Test Inference Cache Builder
-#
-#  Submit with: sbatch scripts/submit_test_inference_cache.sh
-# ============================================================
+﻿#!/bin/bash
 
-#SBATCH --job-name=mds_test_cache
-#SBATCH --output=%x.o%j
-#SBATCH --error=%x.e%j
-#SBATCH --mail-type=ALL
-#SBATCH --mail-user=adonis.jamal@student-cs.fr
 
-#SBATCH --partition=gpua100
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:1
-#SBATCH --mem=40G
-#SBATCH --time=12:00:00
 
-#SBATCH --export=NONE
-#SBATCH --propagate=NONE
 
 set -euo pipefail
 
@@ -38,9 +19,6 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 cd "$PROJECT_ROOT"
 export PYTHONPATH="$PROJECT_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
-# Train year can be edited directly in test_inference_cache.py (TRAIN_YEAR).
-# Optional CLI override example:
-# python scripts/test_inference_cache.py --train-year 2017
 python scripts/test_inference_cache.py
 
 echo "=== Inference cache run finished ==="

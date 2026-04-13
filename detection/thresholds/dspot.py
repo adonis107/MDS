@@ -1,4 +1,4 @@
-import numpy as np
+﻿import numpy as np
 
 from detection.thresholds.pot import PeakOverThreshold
 from detection.thresholds.utils.grimshaw import Grimshaw
@@ -33,10 +33,8 @@ def DriftStreamingPeakOverThreshold(
         Proceedings of the 23rd ACM SIGKDD International Conference on Knowledge 
         Discovery and Data Mining. 2017.
     """
-    # Last depth normal values
     w = data[:depth]
 
-    # Local model with depth
     m = w.mean()
 
     x_ = []
@@ -53,21 +51,19 @@ def DriftStreamingPeakOverThreshold(
         epsilon=epsilon
     )
 
-    # Find the peaks
     y = x_[x_ > t] - t
 
-    # Record the threshold
     z_list = [z + m] * (depth + num_init)
 
     for i in range(depth + num_init, data.size):
         x_ = np.append(x_, data[i] - m)
         effective_threshold = z + m
 
-        if x_[-1] > z: # anormaly case
+        if x_[-1] > z:
             z_list.append(effective_threshold)
             continue
 
-        elif x_[-1] > t: # real peak case
+        elif x_[-1] > t:
             y = np.append(y, x_[-1] - t)
             gamma, sigma = Grimshaw(
                 peaks=y, 
@@ -84,17 +80,14 @@ def DriftStreamingPeakOverThreshold(
                 t = t,
             ) 
 
-        else: # normal case
+        else:
             pass
 
-        # Add the current normal value
         w = w[1:]
         w = np.append(w, data[i])
 
-        # Update the local model
         m = w.mean()
 
-        # Record the threshold
         z_list.append(effective_threshold)
 
     return np.array(z_list)

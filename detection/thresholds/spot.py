@@ -1,4 +1,4 @@
-import numpy as np 
+﻿import numpy as np 
 
 from detection.thresholds.pot import PeakOverThreshold
 from detection.thresholds.utils.grimshaw import Grimshaw
@@ -36,17 +36,14 @@ def StreamingPeakOverThreshold(
 
     z, t = PeakOverThreshold(data, num_candidates, risk, init_level, epsilon)
     
-    # Find initial peaks
     y = init_data[init_data > t] - t
     
-    # Init the threshold for SPOT
     z_spot = [z] * num_init
 
     for idx, x in enumerate(rest_data):
-        if x > z: # anormaly case
+        if x > z:
             pass
-        elif x > t: # real peak case
-            # Add new peak
+        elif x > t:
             y = np.append(y, x - t)
             gamma, sigma = Grimshaw(
                 peaks=y, 
@@ -62,7 +59,7 @@ def StreamingPeakOverThreshold(
                 N = num_init + idx,
                 t = t,
             )
-        else: # normal case
+        else:
             pass
 
         z_spot.append(z)

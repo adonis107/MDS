@@ -1,4 +1,4 @@
-import torch
+﻿import torch
 
 
 class IntegratedGradients:
@@ -26,29 +26,20 @@ class IntegratedGradients:
         if baseline is None:
             baseline = torch.zeros_like(inputs)
 
-        # Generate interpolated inputs
-        # Shape: (n_steps, Batch, Seq, Feat)
         alphas = torch.linspace(0, 1, n_steps + 1).to(inputs.device)
         
-        # Create scaled inputs
         scaled_inputs = baseline + alphas[:, None, None, None] * (inputs - baseline)
         scaled_inputs = scaled_inputs.squeeze(1) 
         scaled_inputs = scaled_inputs.detach().requires_grad_(True)
 
-        # Forward pass
         model_output = self.model(scaled_inputs)
         
-        # Apply the target function to get the scalar anomaly score
         score = target_func(model_output, scaled_inputs)
         
-        # Compute Gradients
         grads = torch.autograd.grad(torch.sum(score), scaled_inputs)[0]
         
-        # Integral Approximation
-        # Average gradients across steps
         avg_grads = torch.mean(grads[:-1] + grads[1:], dim=0) / 2.0
         
-        # Scale by (Input - Baseline)
         attributions = (inputs - baseline) * avg_grads.unsqueeze(0)
         
         return attributions

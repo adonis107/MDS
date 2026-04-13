@@ -1,15 +1,4 @@
-# %% [markdown]
-# # Sequential Training
-# 
-# We train the models sequentially, across multiple days.
-# 
-# - **Dataset:** TOTF.PA (Euronext Paris)
-# - **Models:**
-#     - Transformer + OC-SVM (hybrid)
-#     - PNN (Probabilistic Neural Network)
-#     - PRAE (Probabilistic Robust Autoencoder)
-# %%
-import os
+﻿import os
 import sys
 import glob
 import logging
@@ -44,25 +33,17 @@ logger = logging.getLogger("training")
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 logger.info("Device: %s", DEVICE)
 
-# %% [markdown]
-# ## Configuration
 
-# %%
-# Paths
 DATA_DIR = os.path.join("data", "processed", "TOTF.PA-book")
-TRAIN_YEAR = os.environ.get("MDS_YEAR", "2017")  # override via env for SLURM parallelism
+TRAIN_YEAR = os.environ.get("MDS_YEAR", "2017")
 RESULTS_DIR = os.path.join("results", TRAIN_YEAR)
 RESUME_DIR = os.path.join(RESULTS_DIR, "resume_state")
 os.makedirs(RESULTS_DIR, exist_ok=True)
 os.makedirs(RESUME_DIR, exist_ok=True)
 
-# File listing
 FILES = sorted(glob.glob(os.path.join(DATA_DIR, f"{TRAIN_YEAR}*.parquet")))
 NUM_HOLDOUT = 12
 NUM_TRAIN_DAYS = len(FILES) - NUM_HOLDOUT
-# Held-out files split into two evaluation groups:
-#   test_proximate (T_A): files [NUM_TRAIN_DAYS .. NUM_TRAIN_DAYS+9)  — 9 days adjacent to training
-#   test_distal    (T_B): files [NUM_TRAIN_DAYS+9 .. N)               — last 3 days
 TRAIN_FILES = FILES[:NUM_TRAIN_DAYS]
 TEST_PROXIMATE_FILES = FILES[NUM_TRAIN_DAYS:NUM_TRAIN_DAYS + 9]
 TEST_DISTAL_FILES = FILES[NUM_TRAIN_DAYS + 9:]
@@ -71,51 +52,42 @@ logger.info(
     len(FILES), NUM_TRAIN_DAYS, len(TEST_PROXIMATE_FILES), len(TEST_DISTAL_FILES),
 )
 
-# %% [markdown]
-# ## Model Types
 _ALL_MODELS = ["transformer_ocsvm", "pnn", "prae"]
 MODEL_TYPES = os.environ.get("MDS_MODELS", "").split(",") if os.environ.get("MDS_MODELS") else _ALL_MODELS
 
-# Data parameters
 TIME_COL = "xltime"
-MARKET_OPEN_HOUR = 9.0   # Euronext Paris continuous session
+MARKET_OPEN_HOUR = 9.0
 FIRST_HOUR_MINUTES = 60
 TRAIN_BLOCK_MINUTES = 5
 VAL_BLOCK_MINUTES = 5
 
-# Preprocessing
 SEQ_LENGTH = 25
 BATCH_SIZE = 64
 TARGET_COL = "log_return"
 
-# Training
 EPOCHS = 1000
 LR = 1e-4
 PATIENCE = 20
 
-# Model architectures
 TRANSFORMER_CFG = dict(model_dim=128, num_heads=8, num_layers=6, representation_dim=128, dim_feedforward=512)
 PNN_HIDDEN_DIM = 64
 PRAE_SIGMA = 0.5
 
-# OC-SVM (Nyström approximation + linear SGD on CUDA)
 OCSVM_NU = 0.01
 NYSTROEM_COMPONENTS = 300
 OCSVM_SGD_LR = 0.01
 OCSVM_SGD_EPOCHS = 500
 
-# LOB columns present in processed files
 LOB_COLUMNS = [
     f"{side}-{typ}-{lvl}"
     for lvl in range(1, 11)
     for side, typ in [("bid","price"),("bid","volume"),("ask","price"),("ask","volume")]
 ]
 
-# Storage for trained artefacts
-trained_models = {}   # model_type -> (model, detector_or_None)
-trained_scalers = {}  # model_type -> scaler
-feature_name_map = {} # model_type -> list of feature names
-training_log = []     # list of dicts for summary
+trained_models = {}
+trained_scalers = {}
+feature_name_map = {}
+training_log = []
 
 for model_type in MODEL_TYPES:
     if final_artifacts_exist(model_type, RESULTS_DIR):
@@ -164,7 +136,6 @@ for model_type in MODEL_TYPES:
         if feature_names is None:
             feature_names = features.columns.tolist()
 
-        # Ensure consistent columns across days
         for col in feature_names:
             if col not in features.columns:
                 features[col] = 0.0
@@ -196,7 +167,6 @@ for model_type in MODEL_TYPES:
                 PNN_HIDDEN_DIM, PRAE_SIGMA,
             )
 
-            # PRAE: tune lambda_reg via validation reconstruction loss
             if model_type == "prae":
                 heuristic_lambda = calculate_heuristic_lambda(
                     train_loader, seq_len=SEQ_LENGTH, num_features=num_features)
@@ -240,12 +210,8 @@ for model_type in MODEL_TYPES:
             prae_lambda=prae_lambda,
         )
 
-    # ----------------------------------------------------------------
-    # Fit Nyström OC-SVM once after all days, using the final frozen
-    # encoder to re-encode every training day's first-hour data.
-    # ----------------------------------------------------------------
     if model_type == "transformer_ocsvm" and detector is not None:
-        logger.info("Fitting Nyström OC-SVM on latent representations from all training days...")
+        logger.info("Fitting NystrÃ¶m OC-SVM on latent representations from all training days...")
         model.eval()
         all_latent = []
         with torch.no_grad():
@@ -265,7 +231,6 @@ for model_type in MODEL_TYPES:
                 seqs = create_sequences(scaled, SEQ_LENGTH)
                 if len(seqs) == 0:
                     continue
-                # Encode in batches to avoid OOM - keep on GPU
                 x_tensor = torch.tensor(seqs, dtype=torch.float32)
                 ds = TensorDataset(x_tensor, x_tensor)
                 loader = DataLoader(ds, batch_size=BATCH_SIZE, shuffle=False)
@@ -275,19 +240,14 @@ for model_type in MODEL_TYPES:
                     all_latent.append(latent)
         X_latent = torch.cat(all_latent, dim=0)
 
-        # Set gamma via the median heuristic: γ = 1 / median(‖zᵢ − zⱼ‖²)
-        # The previous formula (10 / (d*Var)) produced a gamma that made the
-        # RBF kernel ≈ 0 between all distinct points (exp(-20)), collapsing
-        # Nyström features to zero and yielding a constant decision function.
         gamma = TransformerOCSVM._median_heuristic_gamma(X_latent)
         detector.ocsvm.set_gamma(gamma)
         logger.info("OC-SVM gamma set to %.6f  (median heuristic, d=%d)", gamma, X_latent.shape[1])
 
         detector.ocsvm.fit(X_latent)
-        logger.info("Nyström OC-SVM fitted on %d latent vectors from %d days.",
+        logger.info("NystrÃ¶m OC-SVM fitted on %d latent vectors from %d days.",
                      X_latent.shape[0], NUM_TRAIN_DAYS)
 
-    # Save artefacts
     if model is None:
         logger.error("%s: no model was built (all training days skipped or no data). Nothing to save.", model_type)
         continue
@@ -296,22 +256,19 @@ for model_type in MODEL_TYPES:
     trained_scalers[model_type] = scaler
     feature_name_map[model_type] = feature_names
 
-    # Persist weights
     weights_path = os.path.join(RESULTS_DIR, f"{model_type}_weights.pth")
     torch.save(model.state_dict(), weights_path)
     logger.info("Saved %s weights to %s", model_type, weights_path)
 
-    # Persist the Nyström OC-SVM (PyTorch module) for the hybrid model
     if model_type == "transformer_ocsvm" and detector is not None:
         detector_path = os.path.join(RESULTS_DIR, f"{model_type}_detector.pth")
         torch.save(detector.ocsvm, detector_path)
-        logger.info("Saved Nyström OC-SVM detector to %s", detector_path)
+        logger.info("Saved NystrÃ¶m OC-SVM detector to %s", detector_path)
 
     scaler_path = os.path.join(RESULTS_DIR, f"{model_type}_scaler.pkl")
     joblib.dump(scaler, scaler_path)
     logger.info("Saved scaler to %s", scaler_path)
 
-    # Save feature names
     feat_path = os.path.join(RESULTS_DIR, f"{model_type}_features.txt")
     with open(feat_path, "w") as f:
         f.write("\n".join(feature_names))

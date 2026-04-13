@@ -1,7 +1,7 @@
-"""
+﻿"""
 Compute anomaly clustering and generate figures for Section 5.7.
 
-Clusters anomalous windows (flagged by ≥1 model) in the 3-D normalised
+Clusters anomalous windows (flagged by â‰¥1 model) in the 3-D normalised
 score space using HDBSCAN, following the methodology of Section 3.6.1.
 Saves cluster labels, statistics, and generates three figures.
 
@@ -30,16 +30,15 @@ sys.path.insert(0, os.path.abspath("."))
 from detection.data.loaders import create_sequences
 from detection.sensitivity.occlusion import parse_feature_attributes
 
-# ── Constants ───────────────────────────────────────────────────────
 OUT_DIR = os.path.join("figures", "results")
 os.makedirs(OUT_DIR, exist_ok=True)
 
 SEQ_LENGTH = 25
 HDBSCAN_MIN_SAMPLES = 15
-HDBSCAN_FRAC = 20          # n_anom // HDBSCAN_FRAC → min_cluster_size
+HDBSCAN_FRAC = 20
 HDBSCAN_MAX_MIN_SIZE = 500
-MAX_HDBSCAN_POINTS = 20000  # subsample threshold for HDBSCAN
-N_PROFILE_PER_CLUSTER = 300  # subsample for feature group profile
+MAX_HDBSCAN_POINTS = 20000
+N_PROFILE_PER_CLUSTER = 300
 YEARS = ["2015", "2017"]
 MODEL_TYPES = ["transformer_ocsvm", "pnn", "prae"]
 
@@ -76,7 +75,6 @@ def save_fig(fig, name):
     print(f"  saved {path}")
 
 
-# ── Helpers ─────────────────────────────────────────────────────────
 def load_feature_names(year):
     with open(f"results/{year}/pnn_features.txt") as f:
         return [line.strip() for line in f if line.strip()]
@@ -95,7 +93,6 @@ def _test_day_indices(meta):
     return [i for i, l in enumerate(meta["day_split_labels"]) if "test" in l]
 
 
-# ── Clustering ──────────────────────────────────────────────────────
 def cluster_year(year):
     """
     Load scores/preds, select anomalous windows, cluster in 3-D score space.
@@ -109,13 +106,11 @@ def cluster_year(year):
     test_end = bounds[test_days[-1] + 1]
     n_test = test_end - test_start
 
-    # Load scores and preds (sliced to test split)
     scores_raw = {}
     preds = {}
     for mt in MODEL_TYPES:
         s = np.load(f"results/{year}/test_output/{mt}_scores.npy")[test_start:test_end]
         p = np.load(f"results/{year}/test_output/{mt}_preds.npy")[test_start:test_end]
-        # Handle NaN in scores (set to min finite value)
         nan_mask = ~np.isfinite(s)
         if nan_mask.any():
             s[nan_mask] = np.nanmin(s) if np.any(np.isfinite(s)) else 0.0
@@ -123,30 +118,25 @@ def cluster_year(year):
         preds[mt] = p
     print(f"  Test windows: {n_test}")
 
-    # Select anomalous windows (flagged by >= 1 model)
     n_models_flagged = sum(preds[mt].astype(int) for mt in MODEL_TYPES)
     anom_mask = n_models_flagged >= 1
-    anom_indices = np.where(anom_mask)[0]  # local indices within test split
+    anom_indices = np.where(anom_mask)[0]
     n_anom = len(anom_indices)
     print(f"  Anomalous windows (>=1 model): {n_anom} ({100*n_anom/n_test:.2f}%)")
 
-    # Consensus counts
     for k in [1, 2, 3]:
         ck = (n_models_flagged == k).sum()
         print(f"    {k}-model agreement: {ck}")
 
-    # Min-max normalise scores across FULL test set, then restrict to anomalies
     score_matrix_full = np.column_stack([scores_raw[mt] for mt in MODEL_TYPES])
     scaler = MinMaxScaler()
     score_matrix_full_norm = scaler.fit_transform(score_matrix_full)
     X_anom = score_matrix_full_norm[anom_indices]
 
-    # HDBSCAN (with subsampling for large datasets)
     rng_clust = np.random.default_rng(42)
     min_cluster_size = max(5, min(HDBSCAN_MAX_MIN_SIZE, n_anom // HDBSCAN_FRAC))
 
     if n_anom > MAX_HDBSCAN_POINTS:
-        # Subsample, cluster, then propagate labels via KNN
         sub_idx = rng_clust.choice(n_anom, size=MAX_HDBSCAN_POINTS, replace=False)
         X_sub = X_anom[sub_idx]
         min_cs_sub = max(5, min(HDBSCAN_MAX_MIN_SIZE, MAX_HDBSCAN_POINTS // HDBSCAN_FRAC))
@@ -156,21 +146,17 @@ def cluster_year(year):
         sub_labels = hdb.fit_predict(X_sub)
         print(f"  Subsample clustering done: {len(set(sub_labels)) - (1 if -1 in sub_labels else 0)} clusters")
 
-        # Propagate to full set via 5-NN (excluding noise from training)
         valid_sub = sub_labels != -1
         if valid_sub.sum() >= 5:
             knn = KNeighborsClassifier(n_neighbors=5, weights="distance")
             knn.fit(X_sub[valid_sub], sub_labels[valid_sub])
             print(f"  KNN propagation to {n_anom} points...", flush=True)
-            # Batch prediction to avoid memory issues
             batch_size = 100000
             cluster_labels = np.empty(n_anom, dtype=int)
             for i in range(0, n_anom, batch_size):
                 cluster_labels[i:i+batch_size] = knn.predict(X_anom[i:i+batch_size])
-            # Re-assign noise: use KNN distance threshold
             noise_frac = (~valid_sub).sum() / len(sub_labels)
             if noise_frac > 0.005:
-                # Use distance to nearest training neighbor as proxy
                 dists, _ = knn.kneighbors(X_anom, n_neighbors=1)
                 dist_threshold = np.percentile(dists.ravel(), 100 * (1 - noise_frac))
                 cluster_labels[dists.ravel() > dist_threshold] = -1
@@ -188,7 +174,6 @@ def cluster_year(year):
     n_noise = int((cluster_labels == -1).sum())
     print(f"  Clusters: {n_clusters}, noise: {n_noise} ({100*n_noise/n_anom:.1f}%)")
 
-    # Validation metrics (non-noise only, subsampled for speed)
     valid_mask = cluster_labels != -1
     n_valid = int(valid_mask.sum())
     if n_valid >= 2 and n_clusters >= 2:
@@ -203,11 +188,9 @@ def cluster_year(year):
         sil, db = np.nan, np.nan
     print(f"  Silhouette: {sil:.4f}, Davies-Bouldin: {db:.4f}")
 
-    # PCA
     pca = PCA(n_components=2, random_state=42)
     X_pca = pca.fit_transform(X_anom)
 
-    # Per-cluster stats
     cluster_stats = []
     for c in unique_clusters:
         mask = cluster_labels == c
@@ -215,7 +198,6 @@ def cluster_year(year):
         pnn_gain = scores_raw["pnn"][anom_indices[mask]]
         mean_gain = float(np.nanmean(pnn_gain))
         det_rates = {mt: float(preds[mt][anom_indices[mask]].mean()) for mt in MODEL_TYPES}
-        # Day assignment for temporal analysis
         global_indices = anom_indices[mask] + test_start
         day_idx = np.searchsorted(bounds, global_indices, side="right") - 1
         cluster_stats.append({
@@ -258,7 +240,6 @@ def cluster_year(year):
     }
 
 
-# ── Feature group profile ──────────────────────────────────────────
 def compute_feature_group_profile(year, res, feature_names, feature_types, rng):
     """
     Subsample windows per cluster, load their raw features,
@@ -273,15 +254,13 @@ def compute_feature_group_profile(year, res, feature_names, feature_types, rng):
     anom_indices = res["anom_indices"]
     unique_clusters = res["unique_clusters"]
 
-    # Build feature group mapping
-    group_map = {}  # group_name -> list of feature indices
+    group_map = {}
     for i, ft in enumerate(feature_types):
         group_map.setdefault(ft, []).append(i)
     group_names = sorted(group_map.keys())
     n_groups = len(group_names)
 
-    # Subsample per cluster
-    sampled_local = []   # (cluster_label, anomaly_index_position)
+    sampled_local = []
     for c in unique_clusters:
         c_positions = np.where(cluster_labels == c)[0]
         n_pick = min(N_PROFILE_PER_CLUSTER, len(c_positions))
@@ -289,17 +268,15 @@ def compute_feature_group_profile(year, res, feature_names, feature_types, rng):
         for p in picked:
             sampled_local.append((c, p))
 
-    # Map to global indices and group by day
     global_indices = np.array([anom_indices[p] + test_start for _, p in sampled_local])
     day_idx_arr = np.searchsorted(bounds[:-1], global_indices, side="right") - 1
 
-    day_to_samples = {}  # day_idx -> list of (sample_position_in_sampled, local_row)
+    day_to_samples = {}
     for si, (_, p) in enumerate(sampled_local):
         di = int(day_idx_arr[si])
-        local_row = int(global_indices[si] - bounds[di]) + SEQ_LENGTH - 1  # last row of window
+        local_row = int(global_indices[si] - bounds[di]) + SEQ_LENGTH - 1
         day_to_samples.setdefault(di, []).append((si, local_row))
 
-    # Load features per day
     n_sampled = len(sampled_local)
     group_values = np.zeros((n_sampled, n_groups), dtype=np.float32)
     data_dir = "data/processed/TOTF.PA-book"
@@ -329,13 +306,11 @@ def compute_feature_group_profile(year, res, feature_names, feature_types, rng):
         del arr, df
         gc.collect()
 
-    # Standardise each group column (zero mean, unit var) across all sampled windows
     gv_mean = group_values.mean(axis=0, keepdims=True)
     gv_std = group_values.std(axis=0, keepdims=True)
     gv_std[gv_std == 0] = 1.0
     group_values_std = (group_values - gv_mean) / gv_std
 
-    # Compute cluster means of standardised values
     sample_clusters = np.array([c for c, _ in sampled_local])
     profile_rows = {}
     for c in unique_clusters:
@@ -349,7 +324,6 @@ def compute_feature_group_profile(year, res, feature_names, feature_types, rng):
     return group_names, profile_matrix
 
 
-# ── Figure 5.7.1: Cluster projection ───────────────────────────────
 def fig_cluster_projection(results):
     """PCA scatter of flagged windows, coloured by cluster. One panel per year."""
     n_years = len(results)
@@ -363,7 +337,6 @@ def fig_cluster_projection(results):
         pca = res["pca"]
         unique = res["unique_clusters"]
 
-        # Subsample for plotting if too many points
         MAX_PLOT = 50000
         n_pts = len(X_pca)
         if n_pts > MAX_PLOT:
@@ -374,12 +347,10 @@ def fig_cluster_projection(results):
             X_pca_plot = X_pca
             labels_plot = labels
 
-        # Plot noise first (behind)
         noise_mask = labels_plot == -1
         if noise_mask.any():
             ax.scatter(X_pca_plot[noise_mask, 0], X_pca_plot[noise_mask, 1],
                        s=3, alpha=0.15, c=NOISE_COLOR, rasterized=True)
-        # Plot clusters
         centroids = []
         for c in unique:
             if c == -1:
@@ -388,18 +359,15 @@ def fig_cluster_projection(results):
             color = CLUSTER_PALETTE[c % len(CLUSTER_PALETTE)]
             ax.scatter(X_pca_plot[mask, 0], X_pca_plot[mask, 1],
                        s=6, alpha=0.4, c=color, rasterized=True)
-            # Use full data for centroid calculation
             full_mask = labels == c
             cx, cy = X_pca[full_mask, 0].mean(), X_pca[full_mask, 1].mean()
             centroids.append((c, cx, cy, color))
-        # Mark centroids
         for c, cx, cy, color in centroids:
             ax.scatter(cx, cy, s=120, c=color, edgecolors="black",
                        linewidths=1.2, marker="D", zorder=10)
             ax.annotate(f"C{c}", (cx, cy), fontsize=8, fontweight="bold",
                         xytext=(5, 5), textcoords="offset points")
 
-        # Legend
         handles = []
         for c in unique:
             if c == -1:
@@ -421,9 +389,8 @@ def fig_cluster_projection(results):
     save_fig(fig, "fig_5_7_cluster_pca.pdf")
 
 
-# ── Figure 5.7.2: Feature group profile heatmap ────────────────────
 def fig_feature_group_profile(results, profiles):
-    """Heatmap: clusters × feature groups, standardised mean values."""
+    """Heatmap: clusters Ã- feature groups, standardised mean values."""
     n_years = len(results)
     fig, axes = plt.subplots(n_years, 1, figsize=(10, 3.5 * n_years + 1))
     if n_years == 1:
@@ -434,7 +401,6 @@ def fig_feature_group_profile(results, profiles):
         unique = res["unique_clusters"]
         row_labels = [f"C{c}" if c != -1 else "Noise" for c in unique]
 
-        # Only show non-noise clusters for readability
         keep = [i for i, c in enumerate(unique) if c != -1]
         if not keep:
             ax.text(0.5, 0.5, "No clusters", transform=ax.transAxes, ha="center")
@@ -449,7 +415,6 @@ def fig_feature_group_profile(results, profiles):
         ax.set_xticklabels(group_names, rotation=45, ha="right", fontsize=7)
         ax.set_yticks(range(len(rl)))
         ax.set_yticklabels(rl, fontsize=9)
-        # Annotate cells if small enough
         if len(rl) <= 8 and len(group_names) <= 25:
             for i in range(len(rl)):
                 for j in range(len(group_names)):
@@ -465,7 +430,6 @@ def fig_feature_group_profile(results, profiles):
     save_fig(fig, "fig_5_7_feature_group_profile.pdf")
 
 
-# ── Figure 5.7.3: Cluster size and temporal distribution ───────────
 def fig_cluster_temporal(results):
     """Bar chart of cluster sizes + timeline scatter per year."""
     n_years = len(results)
@@ -483,7 +447,6 @@ def fig_cluster_temporal(results):
         test_days = res["test_days"]
         day_names = res["day_names"]
 
-        # ── Left: cluster sizes ──
         ax_left = axes[row, 0]
         sizes = [(c, int((labels == c).sum())) for c in unique]
         sizes.sort(key=lambda x: x[1], reverse=True)
@@ -499,16 +462,13 @@ def fig_cluster_temporal(results):
         ax_left.set_title(f"{year}: cluster sizes")
         ax_left.invert_yaxis()
 
-        # ── Right: temporal distribution ──
         ax_right = axes[row, 1]
         global_idx = anom_indices + test_start
         day_idx = np.searchsorted(bounds[:-1], global_idx, side="right") - 1
 
-        # Map day indices to sequential test-day positions
         test_day_set = set(test_days)
         test_day_order = {d: i for i, d in enumerate(test_days)}
 
-        # Subsample for plotting (max 5000 per cluster)
         rng = np.random.default_rng(42)
         for c in unique:
             c_mask = labels == c
@@ -516,7 +476,6 @@ def fig_cluster_temporal(results):
             if len(c_pos) > 5000:
                 c_pos = rng.choice(c_pos, size=5000, replace=False)
             c_days = day_idx[c_pos]
-            # Map to test-day order
             c_day_pos = np.array([test_day_order.get(int(d), -1) for d in c_days])
             valid = c_day_pos >= 0
             if valid.sum() == 0:
@@ -527,16 +486,13 @@ def fig_cluster_temporal(results):
             ax_right.scatter(c_day_pos[valid], y_jitter,
                              s=2, alpha=alpha, c=color, rasterized=True)
 
-        # Day labels on x-axis
         short_names = [day_names[d].split("-TOTF")[0] for d in test_days]
-        # Mark proximate vs distal
         split_labels = res["meta"]["day_split_labels"]
         ax_right.set_xticks(range(len(test_days)))
         ax_right.set_xticklabels(short_names, rotation=45, ha="right", fontsize=6)
         ax_right.set_ylabel("Cluster")
         ax_right.set_title(f"{year}: temporal distribution of anomalies")
 
-        # Add proximate/distal shading
         for i, di in enumerate(test_days):
             if "distal" in split_labels[di]:
                 ax_right.axvspan(i - 0.5, i + 0.5, color="#FFE0E0", alpha=0.3, zorder=0)
@@ -545,7 +501,6 @@ def fig_cluster_temporal(results):
     save_fig(fig, "fig_5_7_cluster_temporal.pdf")
 
 
-# ── Main ────────────────────────────────────────────────────────────
 def main():
     rng = np.random.default_rng(42)
     feature_names = load_feature_names("2015")
@@ -559,29 +514,24 @@ def main():
         res = cluster_year(year)
         results[year] = res
 
-        # Save cluster labels
         out_path = f"results/{year}/test_output/cluster_labels.npy"
         np.save(out_path, res["cluster_labels"])
         print(f"  saved {out_path}")
 
-        # Save cluster stats
         stats_path = f"results/{year}/test_output/cluster_stats.csv"
         res["stats_df"].to_csv(stats_path, index=False)
         print(f"  saved {stats_path}")
 
-        # Feature group profile (subsample)
         print(f"\n--- Feature group profile ({year}) ---")
         group_names, profile_matrix = compute_feature_group_profile(
             year, res, feature_names, feature_types, rng)
         profiles[year] = (group_names, profile_matrix)
 
-    # ── Figures ──
     print("\n--- Generating figures ---")
     fig_cluster_projection(results)
     fig_feature_group_profile(results, profiles)
     fig_cluster_temporal(results)
 
-    # ── Summary for LaTeX ──
     print("\n\n=== SUMMARY FOR LATEX ===")
     for year in YEARS:
         res = results[year]
@@ -594,7 +544,6 @@ def main():
         print(f"\n  Cluster summary:")
         print(res["stats_df"].to_string(index=False))
 
-        # Feature group profile summary
         group_names, profile = profiles[year]
         unique = res["unique_clusters"]
         for i, c in enumerate(unique):
@@ -611,3 +560,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
